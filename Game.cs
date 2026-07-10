@@ -47,6 +47,7 @@ namespace RetroLauncher
         public int UserRating { get; set; } = 0;
         public string UserNotes { get; set; } = "";
         public string Priority { get; set; } = "medium";
+        public string LaunchArguments { get; set; } = "";
 
         // camelCase aliases for JSON serialization and external tools compatibility
         [JsonIgnore]
@@ -87,6 +88,8 @@ namespace RetroLauncher
         public string userNotes { get => UserNotes; set => UserNotes = value; }
         [JsonIgnore]
         public string priority { get => Priority; set => Priority = value; }
+        [JsonIgnore]
+        public string launchArguments { get => LaunchArguments; set => LaunchArguments = value; }
 
         public override string ToString()
         {

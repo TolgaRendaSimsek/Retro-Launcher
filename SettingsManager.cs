@@ -9,6 +9,7 @@ namespace RetroLauncher
     public class SettingsConfig
     {
         public Dictionary<string, string> DefaultEmulators { get; set; } = new();
+        public bool IsFirstRun { get; set; } = true;
     }
 
     public static class SettingsManager

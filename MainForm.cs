@@ -105,8 +105,96 @@ namespace RetroLauncher
                 }
             };
 
+            var setupWizardItem = new ToolStripMenuItem("First-Time Setup Wizard");
+            setupWizardItem.Click += (s, e) => {
+                using (var wizard = new SetupWizardForm())
+                {
+                    if (wizard.ShowDialog(this) == DialogResult.OK)
+                    {
+                        EmulatorManager.Instance.LoadEmulators();
+                        RefreshGameList();
+                    }
+                }
+            };
+            toolsToolStripMenuItem.DropDownItems.Add(setupWizardItem);
+
+            var packageManagerItem = new ToolStripMenuItem("Package Manager");
+            packageManagerItem.Click += (s, e) => {
+                using (var form = new PackageManagerForm())
+                {
+                    form.ShowDialog(this);
+                }
+            };
+            toolsToolStripMenuItem.DropDownItems.Add(packageManagerItem);
+
+            this.Shown += MainForm_Shown;
+
+            GameLaunchService.Instance.GameStarted += (s, gameId) =>
+            {
+                if (this.IsDisposed || !this.IsHandleCreated) return;
+                this.Invoke((MethodInvoker)delegate
+                {
+                    this.WindowState = FormWindowState.Minimized;
+                    this.ShowInTaskbar = false;
+                });
+            };
+
+            GameLaunchService.Instance.GameExited += (s, gameId) =>
+            {
+                if (this.IsDisposed || !this.IsHandleCreated) return;
+                this.Invoke((MethodInvoker)delegate
+                {
+                    this.WindowState = FormWindowState.Normal;
+                    this.ShowInTaskbar = true;
+                    this.Focus();
+
+                    GameProcessExited?.Invoke(null, gameId);
+
+                    if (_selectedGame != null)
+                    {
+                        if (_selectedGame.Platform.StartsWith("Sony PlayStation", StringComparison.OrdinalIgnoreCase))
+                        {
+                            lblDetailsStatus.ForeColor = Color.FromArgb(248, 113, 113);
+                            lblDetailsStatus.Text = "⚠️ PlayStation emulators require BIOS files (PS1/PS2) or system firmware (PS3) to run. These must be legally obtained by the user.";
+                        }
+                        else
+                        {
+                            lblDetailsStatus.ForeColor = Color.FromArgb(156, 163, 175);
+                            lblDetailsStatus.Text = "Ready to play.";
+                        }
+                    }
+                    else
+                    {
+                        lblDetailsStatus.ForeColor = Color.FromArgb(156, 163, 175);
+                        lblDetailsStatus.Text = "Ready to play.";
+                    }
+
+                    RefreshGameList();
+                });
+            };
+
             // Hover transitions
-            SetupHoverEffect(btnPlay, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
+            btnPlay.BackColor = Color.FromArgb(99, 102, 241);
+            btnPlay.MouseEnter += (s, e) => {
+                if (_selectedGame != null && GameLaunchService.Instance.IsGameRunning(_selectedGame.Id))
+                {
+                    btnPlay.BackColor = Color.FromArgb(220, 38, 38); // Darker red on hover
+                }
+                else
+                {
+                    btnPlay.BackColor = Color.FromArgb(79, 70, 229); // Darker indigo on hover
+                }
+            };
+            btnPlay.MouseLeave += (s, e) => {
+                if (_selectedGame != null && GameLaunchService.Instance.IsGameRunning(_selectedGame.Id))
+                {
+                    btnPlay.BackColor = Color.FromArgb(239, 68, 68); // Red
+                }
+                else
+                {
+                    btnPlay.BackColor = Color.FromArgb(99, 102, 241); // Indigo
+                }
+            };
             SetupHoverEffect(btnEditPaths, Color.FromArgb(55, 65, 81), Color.FromArgb(31, 41, 55));
             SetupHoverEffect(btnDelete, Color.FromArgb(239, 68, 68), Color.FromArgb(220, 38, 38));
             SetupHoverEffect(btnAddGame, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
@@ -146,6 +234,22 @@ namespace RetroLauncher
 
             // Check for updates asynchronously
             _ = UpdateManager.CheckForUpdatesAsync(this);
+        }
+
+        private void MainForm_Shown(object? sender, EventArgs e)
+        {
+            var settings = SettingsManager.LoadSettings();
+            if (settings.IsFirstRun)
+            {
+                using (var wizard = new SetupWizardForm())
+                {
+                    if (wizard.ShowDialog(this) == DialogResult.OK)
+                    {
+                        EmulatorManager.Instance.LoadEmulators();
+                        RefreshGameList();
+                    }
+                }
+            }
         }
 
         private void btnProfile_Click(object? sender, EventArgs e)
@@ -259,16 +363,35 @@ namespace RetroLauncher
 
             pbDetailsCover.Image = MediaManager.GetImageOrPlaceholder(_selectedGame.CoverImagePath, "cover");
 
-            // BIOS/Firmware warning banner for PlayStation games
-            if (_selectedGame.Platform.StartsWith("Sony PlayStation", StringComparison.OrdinalIgnoreCase))
+            if (GameLaunchService.Instance.IsGameRunning(_selectedGame.Id))
             {
-                lblDetailsStatus.ForeColor = Color.FromArgb(248, 113, 113); // Coral warning red
-                lblDetailsStatus.Text = "⚠️ PlayStation emulators require BIOS files (PS1/PS2) or system firmware (PS3) to run. These must be legally obtained by the user.";
+                btnPlay.Text = "🛑 STOP GAME";
+                btnPlay.BackColor = Color.FromArgb(239, 68, 68);
+                
+                var sessionStart = PlaytimeManager.Instance.GetSessionStart(_selectedGame.Id);
+                if (sessionStart.HasValue)
+                {
+                    var elapsed = DateTime.Now - sessionStart.Value;
+                    lblDetailsStatus.ForeColor = Color.FromArgb(165, 180, 252);
+                    lblDetailsStatus.Text = $"Playing {_selectedGame.Title} • Session: {elapsed.Minutes}m {elapsed.Seconds}s";
+                }
             }
             else
             {
-                lblDetailsStatus.ForeColor = Color.FromArgb(156, 163, 175);
-                lblDetailsStatus.Text = "Ready to play.";
+                btnPlay.Text = "▶  PLAY";
+                btnPlay.BackColor = Color.FromArgb(99, 102, 241);
+
+                // BIOS/Firmware warning banner for PlayStation games
+                if (_selectedGame.Platform.StartsWith("Sony PlayStation", StringComparison.OrdinalIgnoreCase))
+                {
+                    lblDetailsStatus.ForeColor = Color.FromArgb(248, 113, 113); // Coral warning red
+                    lblDetailsStatus.Text = "⚠️ PlayStation emulators require BIOS files (PS1/PS2) or system firmware (PS3) to run. These must be legally obtained by the user.";
+                }
+                else
+                {
+                    lblDetailsStatus.ForeColor = Color.FromArgb(156, 163, 175);
+                    lblDetailsStatus.Text = "Ready to play.";
+                }
             }
         }
 
@@ -449,124 +572,34 @@ namespace RetroLauncher
                 return;
             }
 
-            LaunchGame(_selectedGame);
+            if (GameLaunchService.Instance.IsGameRunning(_selectedGame.Id))
+            {
+                GameLaunchService.Instance.StopGame(_selectedGame.Id);
+            }
+            else
+            {
+                LaunchGame(_selectedGame);
+            }
         }
 
-        private void LaunchGame(Game game)
+        private async void LaunchGame(Game game)
         {
-            string emulator = ResolvePath(game.EmulatorId);
-            string rom = ResolvePath(game.RomPath);
-
-            if (string.IsNullOrEmpty(game.EmulatorId) || !File.Exists(emulator))
-            {
-                lblDetailsStatus.Text = "Error: Emulator executable not found.";
-                MessageBox.Show(
-                    $"Emulator executable not found at:\n'{game.EmulatorId}'\n\nPlease select a valid emulator path.",
-                    "Missing Emulator",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
-                return;
-            }
-
-            if (string.IsNullOrEmpty(game.RomPath) || (!File.Exists(rom) && !Directory.Exists(rom)))
-            {
-                lblDetailsStatus.Text = "Error: ROM file/folder not found.";
-                MessageBox.Show(
-                    $"ROM file or game folder not found at:\n'{game.RomPath}'\n\nPlease select a valid ROM path.",
-                    "Missing ROM File",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
-                return;
-            }
-
             try
             {
                 lblDetailsStatus.ForeColor = Color.FromArgb(165, 180, 252);
                 lblDetailsStatus.Text = $"Launching {game.Title}... (external process)";
-
-                // Minimize launcher window and hide from desktop taskbar
-                this.WindowState = FormWindowState.Minimized;
-                this.ShowInTaskbar = false;
-
-                DateTime startTime = DateTime.Now;
-                var friendsService = new MockFriendsService();
-                friendsService.UpdateMyStatus(ActivityStatus.Online, game.Title);
-                friendsService.LogActivity($"Started playing {game.Title}");
-
-                ProcessStartInfo psi = new ProcessStartInfo
-                {
-                    FileName = emulator,
-                    Arguments = $"\"{rom}\"", // Pass quoted ROM/folder path
-                    UseShellExecute = true
-                };
-
-                Process? process = Process.Start(psi);
-                if (process != null)
-                {
-                    PlaytimeManager.Instance.StartSession(game.Id, process.Id);
-                    process.EnableRaisingEvents = true;
-                    process.Exited += (s, ev) =>
-                    {
-                        int sessionMins = PlaytimeManager.Instance.EndSession(game.Id);
-
-                        // Update playtime in library database
-                        game.TotalPlaytimeMinutes = PlaytimeManager.Instance.GetTotalPlaytime(game.Id);
-                        game.LastPlayed = PlaytimeManager.Instance.GetOrCreateRecord(game.Id).LastPlayed;
-                        _libraryManager.UpdateGame(game);
-
-                        // Update playtime in social system
-                        var fs = new MockFriendsService();
-                        var profile = fs.GetLocalProfile();
-                        profile.TotalPlayTimeMinutes = _libraryManager.Games.Sum(g => g.TotalPlaytimeMinutes);
-                        fs.SaveLocalProfile(profile);
-                        fs.UpdateMyStatus(ActivityStatus.Online, "");
-                        fs.LogActivity($"Finished playing {game.Title} (Session: {sessionMins} mins)");
-
-                        // Notify details window or cards
-                        GameProcessExited?.Invoke(null, game.Id);
-
-                        if (!this.IsDisposed && this.IsHandleCreated)
-                        {
-                            this.Invoke((MethodInvoker)delegate
-                            {
-                                this.WindowState = FormWindowState.Normal;
-                                this.ShowInTaskbar = true;
-                                this.Focus();
-                                
-                                // Restore PlayStation banner or status text
-                                if (game.Platform.StartsWith("Sony PlayStation", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    lblDetailsStatus.ForeColor = Color.FromArgb(248, 113, 113);
-                                    lblDetailsStatus.Text = "⚠️ PlayStation emulators require BIOS files (PS1/PS2) or system firmware (PS3) to run. These must be legally obtained by the user.";
-                                }
-                                else
-                                {
-                                    lblDetailsStatus.ForeColor = Color.FromArgb(156, 163, 175);
-                                    lblDetailsStatus.Text = "Ready to play.";
-                                }
-                                
-                                RefreshGameList(); // Refresh list to update play stats
-                            });
-                        }
-                    };
-                }
-                else
-                {
-                    this.WindowState = FormWindowState.Normal;
-                    this.ShowInTaskbar = true;
-                    lblDetailsStatus.Text = "Started, monitor inactive.";
-                }
+                
+                await GameLaunchService.Instance.LaunchGameAsync(game);
             }
             catch (Exception ex)
             {
                 this.WindowState = FormWindowState.Normal;
                 this.ShowInTaskbar = true;
+                lblDetailsStatus.ForeColor = Color.FromArgb(239, 68, 68);
                 lblDetailsStatus.Text = $"Launch failed: {ex.Message}";
                 MessageBox.Show(
-                    $"Failed to start external emulator process:\n{ex.Message}",
-                    "Launch Execution Error",
+                    $"Failed to launch game:\n{ex.Message}",
+                    "Launch Error",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error
                 );
@@ -666,17 +699,19 @@ namespace RetroLauncher
             {
                 btnPlay.Text = "▶  PLAY";
                 btnPlay.Enabled = true;
+                btnPlay.BackColor = Color.FromArgb(99, 102, 241); // Reset to Indigo
                 return;
             }
 
-            if (PlaytimeManager.Instance.IsSessionActive(_selectedGame.Id))
+            if (GameLaunchService.Instance.IsGameRunning(_selectedGame.Id))
             {
                 var sessionStart = PlaytimeManager.Instance.GetSessionStart(_selectedGame.Id);
                 if (sessionStart.HasValue)
                 {
                     var elapsed = DateTime.Now - sessionStart.Value;
-                    btnPlay.Text = $"⏳ RUNNING ({elapsed.Minutes:D2}:{elapsed.Seconds:D2})";
-                    btnPlay.Enabled = false;
+                    btnPlay.Text = $"🛑 STOP GAME ({elapsed.Minutes:D2}:{elapsed.Seconds:D2})";
+                    btnPlay.Enabled = true;
+                    btnPlay.BackColor = Color.FromArgb(239, 68, 68); // Red
 
                     if (VideoManager.Instance.IsRecording && VideoManager.Instance.ActiveGameId == _selectedGame.Id)
                     {
@@ -697,6 +732,7 @@ namespace RetroLauncher
             {
                 btnPlay.Text = "▶  PLAY";
                 btnPlay.Enabled = true;
+                btnPlay.BackColor = Color.FromArgb(99, 102, 241); // Reset to Indigo
                 
                 // Restore warning banner if status text still shows "Playing"
                 if (lblDetailsStatus.Text.StartsWith("Playing", StringComparison.OrdinalIgnoreCase))

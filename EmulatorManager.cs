@@ -435,7 +435,7 @@ namespace RetroLauncher
             }
         }
 
-        private static async Task<(string TagName, string DownloadUrl)?> GetLatestReleaseInfoAsync(string repo)
+        public static async Task<(string TagName, string DownloadUrl, long Size)?> GetLatestReleaseInfoAsync(string repo)
         {
             using (var client = new HttpClient())
             {
@@ -446,6 +446,7 @@ namespace RetroLauncher
                     var root = doc.RootElement;
                     string tagName = root.GetProperty("tag_name").GetString() ?? "";
                     string downloadUrl = "";
+                    long size = 0;
 
                     if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
                     {
@@ -456,6 +457,10 @@ namespace RetroLauncher
                                 (name.EndsWith(".zip") || name.EndsWith(".7z")))
                             {
                                 downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+                                if (asset.TryGetProperty("size", out var sizeProp))
+                                {
+                                    size = sizeProp.GetInt64();
+                                }
                                 break;
                             }
                         }
@@ -468,6 +473,10 @@ namespace RetroLauncher
                                 if (name.EndsWith(".zip") || name.EndsWith(".7z"))
                                 {
                                     downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+                                    if (asset.TryGetProperty("size", out var sizeProp))
+                                    {
+                                        size = sizeProp.GetInt64();
+                                    }
                                     break;
                                 }
                             }
@@ -476,7 +485,7 @@ namespace RetroLauncher
 
                     if (!string.IsNullOrEmpty(tagName) && !string.IsNullOrEmpty(downloadUrl))
                     {
-                        return (tagName, downloadUrl);
+                        return (tagName, downloadUrl, size);
                     }
                 }
             }
