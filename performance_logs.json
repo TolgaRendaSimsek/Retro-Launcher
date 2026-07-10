@@ -1,0 +1,30 @@
+[
+  {
+    "Id": "a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d",
+    "GameId": "chrono_cross",
+    "EmulatorId": "duckstation",
+    "StartedAt": "2026-07-06 20:00:00",
+    "EndedAt": "2026-07-06 20:15:30",
+    "AverageCpuUsage": 12.45,
+    "AverageRamUsage": 320.5,
+    "AverageGpuUsage": 42.1,
+    "AverageFps": 59.95,
+    "MinFps": 58.2,
+    "MaxFps": 60.1,
+    "Notes": "Resolution: 1024x768. Session completed successfully."
+  },
+  {
+    "Id": "f1e2d3c4-b5a6-9f8e-7d6c-5b4a3f2e1d0c",
+    "GameId": "pcsx2_game",
+    "EmulatorId": "pcsx2",
+    "StartedAt": "2026-07-06 21:00:00",
+    "EndedAt": "2026-07-06 21:45:00",
+    "AverageCpuUsage": 18.2,
+    "AverageRamUsage": 512.8,
+    "AverageGpuUsage": 55.4,
+    "AverageFps": 60.0,
+    "MinFps": 45.0,
+    "MaxFps": 60.05,
+    "Notes": "Resolution: 1920x1080. Session completed successfully."
+  }
+]

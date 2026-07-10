@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="RetroLauncherUpdater\**" />
+    <EmbeddedResource Remove="RetroLauncherUpdater\**" />
+    <None Remove="RetroLauncherUpdater\**" />
+    <None Update="mock_update.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="BuildUpdater" AfterTargets="Build">
+    <MSBuild Projects="RetroLauncherUpdater\RetroLauncherUpdater.csproj" Targets="Build" Properties="Configuration=$(Configuration);OutputPath=$(TargetDir)" />
+  </Target>
+
+</Project>

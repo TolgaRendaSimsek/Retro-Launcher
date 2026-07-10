@@ -1,0 +1,600 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace RetroLauncher
+{
+    public class EmulatorItem
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public List<string> SupportedPlatforms { get; set; } = new();
+        public string GithubRepository { get; set; } = "";
+        public string ReleaseAssetPattern { get; set; } = "";
+        public string ExecutablePath { get; set; } = "";
+        public string InstallFolder { get; set; } = "";
+        public string ArchiveType { get; set; } = ""; // e.g. "zip", "7z"
+        public string InstalledVersion { get; set; } = "";
+        public string LatestVersion { get; set; } = "";
+        public string Status { get; set; } = "Missing";
+        public bool RequiresBIOS { get; set; } = false;
+        public bool RequiresFirmware { get; set; } = false;
+        public string DefaultLaunchArguments { get; set; } = "";
+
+        // Backward compatibility properties
+        public string Path { get => ExecutablePath; set => ExecutablePath = value; }
+        public string Version { get => InstalledVersion; set => InstalledVersion = value; }
+        public string Repo { get => GithubRepository; set => GithubRepository = value; }
+
+        public override string ToString()
+        {
+            return string.IsNullOrEmpty(InstalledVersion) ? Name : $"{Name} ({InstalledVersion})";
+        }
+    }
+
+    public class EmulatorConfig
+    {
+        public List<EmulatorItem> Emulators { get; set; } = new();
+        public Dictionary<string, string> DefaultEmulators { get; set; } = new();
+    }
+
+    public class EmulatorManager
+    {
+        private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "emulators.json");
+        private static EmulatorManager? _instance;
+        public static EmulatorManager Instance => _instance ??= new EmulatorManager();
+
+        public EmulatorConfig Config { get; private set; } = new();
+
+        public EmulatorManager()
+        {
+            LoadEmulators();
+        }
+
+        public void LoadEmulators()
+        {
+            Config = LoadConfig();
+        }
+
+        public void SaveEmulators()
+        {
+            SaveConfig(Config);
+        }
+
+        public List<EmulatorItem> DetectInstalledEmulators()
+        {
+            return Config.Emulators.Where(emu => VerifyExecutable(emu.Id)).ToList();
+        }
+
+        public bool VerifyExecutable(string emulatorId)
+        {
+            var emu = FindEmulator(emulatorId);
+            if (emu == null || string.IsNullOrWhiteSpace(emu.Path)) return false;
+
+            string resolved = ResolvePath(emu.Path);
+            if (!File.Exists(resolved)) return false;
+
+            try
+            {
+                var fileInfo = new FileInfo(resolved);
+                if (fileInfo.Length == 0) return false;
+
+                // Basic execution/read validation
+                FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(resolved);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public async Task<bool> CheckForUpdates(string emulatorId)
+        {
+            var emu = FindEmulator(emulatorId);
+            if (emu == null || string.IsNullOrWhiteSpace(emu.Repo)) return false;
+
+            try
+            {
+                var info = await GetLatestReleaseInfoAsync(emu.Repo);
+                if (info != null)
+                {
+                    string latestTag = info.Value.TagName;
+                    return IsUpdateAvailable(emu.Version, latestTag);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to check updates for {emulatorId}: {ex.Message}");
+            }
+            return false;
+        }
+
+        public async Task<bool> InstallEmulator(string emulatorId, IProgress<int>? progress = null)
+        {
+            var emu = FindEmulator(emulatorId);
+            if (emu == null || string.IsNullOrWhiteSpace(emu.Repo)) return false;
+
+            try
+            {
+                progress?.Report(5);
+                var info = await GetLatestReleaseInfoAsync(emu.Repo);
+                if (info == null) return false;
+
+                string downloadUrl = info.Value.DownloadUrl;
+                string tagName = info.Value.TagName;
+
+                string tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp");
+                if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
+
+                string archiveName = Path.GetFileName(new Uri(downloadUrl).AbsolutePath);
+                string archivePath = Path.Combine(tempDir, archiveName);
+
+                progress?.Report(10);
+
+                // Download the release
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher");
+                    using (var response = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
+                    {
+                        response.EnsureSuccessStatusCode();
+                        long? totalBytes = response.Content.Headers.ContentLength;
+
+                        using (var contentStream = await response.Content.ReadAsStreamAsync())
+                        using (var fileStream = new FileStream(archivePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
+                        {
+                            var buffer = new byte[8192];
+                            long totalRead = 0;
+                            int bytesRead;
+
+                            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                            {
+                                await fileStream.WriteAsync(buffer, 0, bytesRead);
+                                totalRead += bytesRead;
+
+                                if (totalBytes.HasValue)
+                                {
+                                    int percent = (int)((double)totalRead / totalBytes.Value * 80) + 10;
+                                    progress?.Report(percent);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                progress?.Report(90);
+
+                // Extract
+                string destDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", emu.Name);
+                if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
+
+                bool extracted = false;
+                if (archivePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    ZipFile.ExtractToDirectory(archivePath, destDir, true);
+                    extracted = true;
+                }
+                else if (archivePath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
+                {
+                    extracted = Extract7zUsingTar(archivePath, destDir);
+                }
+
+                if (extracted)
+                {
+                    // Find executable in target directory
+                    string? exePath = FindExecutableInFolder(destDir);
+                    if (exePath != null)
+                    {
+                        emu.Path = MakeRelativePath(exePath);
+                        emu.Version = tagName;
+                        SaveEmulators();
+                        progress?.Report(100);
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to install emulator: {ex.Message}");
+            }
+            return false;
+        }
+
+        public async Task<bool> UpdateEmulator(string emulatorId, IProgress<int>? progress = null)
+        {
+            return await InstallEmulator(emulatorId, progress);
+        }
+
+        public async Task<bool> RepairEmulator(string emulatorId, IProgress<int>? progress = null)
+        {
+            return await InstallEmulator(emulatorId, progress);
+        }
+
+        public void RemoveEmulator(string emulatorId)
+        {
+            var emu = FindEmulator(emulatorId);
+            if (emu != null)
+            {
+                // Remove default console mappings
+                List<string> keysToRemove = Config.DefaultEmulators
+                    .Where(pair => string.Equals(pair.Value, emu.Path, StringComparison.OrdinalIgnoreCase))
+                    .Select(pair => pair.Key)
+                    .ToList();
+
+                foreach (var key in keysToRemove)
+                {
+                    Config.DefaultEmulators.Remove(key);
+                }
+
+                Config.Emulators.Remove(emu);
+                SaveEmulators();
+            }
+        }
+
+        public bool BrowseManualExecutable(string emulatorId, string? manualPath = null)
+        {
+            var emu = FindEmulator(emulatorId);
+            if (emu == null) return false;
+
+            if (!string.IsNullOrEmpty(manualPath))
+            {
+                emu.Path = MakeRelativePath(manualPath);
+                SaveEmulators();
+                return true;
+            }
+
+            // Launch UI dialog on UI thread
+            bool result = false;
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Title = "Select Emulator Executable";
+                ofd.Filter = "Executables (*.exe)|*.exe|All Files (*.*)|*.*";
+                ofd.InitialDirectory = ResolvePath("Emulators");
+
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    emu.Path = MakeRelativePath(ofd.FileName);
+                    SaveEmulators();
+                    result = true;
+                }
+            }
+            return result;
+        }
+
+        private EmulatorItem? FindEmulator(string emulatorId)
+        {
+            return Config.Emulators.FirstOrDefault(e => 
+                string.Equals(e.Id, emulatorId, StringComparison.OrdinalIgnoreCase) || 
+                string.Equals(e.Name, emulatorId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Backward compatibility static methods
+        public static EmulatorConfig LoadConfig()
+        {
+            try
+            {
+                if (!File.Exists(ConfigPath))
+                {
+                    string localPath = Path.Combine(Directory.GetCurrentDirectory(), "emulators.json");
+                    if (File.Exists(localPath))
+                    {
+                        string jsonText = File.ReadAllText(localPath);
+                        return JsonSerializer.Deserialize<EmulatorConfig>(jsonText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? CreateDefaultConfig();
+                    }
+                    var defaultConfig = CreateDefaultConfig();
+                    SaveConfig(defaultConfig);
+                    return defaultConfig;
+                }
+
+                string json = File.ReadAllText(ConfigPath);
+                return JsonSerializer.Deserialize<EmulatorConfig>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? CreateDefaultConfig();
+            }
+            catch
+            {
+                return CreateDefaultConfig();
+            }
+        }
+
+        public static void SaveConfig(EmulatorConfig config)
+        {
+            try
+            {
+                string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(ConfigPath, json);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to save config: {ex.Message}");
+            }
+        }
+
+        private static EmulatorConfig CreateDefaultConfig()
+        {
+            return new EmulatorConfig
+            {
+                Emulators = new List<EmulatorItem>
+                {
+                    new EmulatorItem
+                    {
+                        Id = "duckstation",
+                        Name = "DuckStation",
+                        SupportedPlatforms = new List<string> { "Sony PlayStation 1" },
+                        GithubRepository = "stenzek/duckstation",
+                        ReleaseAssetPattern = "duckstation-windows-x64-release.zip",
+                        ExecutablePath = "Emulators/PS1/duckstation.exe",
+                        InstallFolder = "Emulators/PS1",
+                        ArchiveType = "zip",
+                        InstalledVersion = "1.0.0",
+                        LatestVersion = "1.0.0",
+                        Status = "Installed",
+                        RequiresBIOS = true,
+                        RequiresFirmware = false,
+                        DefaultLaunchArguments = "-fullscreen"
+                    },
+                    new EmulatorItem
+                    {
+                        Id = "pcsx2",
+                        Name = "PCSX2",
+                        SupportedPlatforms = new List<string> { "Sony PlayStation 2" },
+                        GithubRepository = "PCSX2/pcsx2",
+                        ReleaseAssetPattern = "pcsx2-v1.7.*-windows-x64-Qt.7z",
+                        ExecutablePath = "Emulators/PS2/pcsx2.exe",
+                        InstallFolder = "Emulators/PS2",
+                        ArchiveType = "7z",
+                        InstalledVersion = "1.7.0",
+                        LatestVersion = "1.7.0",
+                        Status = "Installed",
+                        RequiresBIOS = true,
+                        RequiresFirmware = false,
+                        DefaultLaunchArguments = "-fullscreen"
+                    },
+                    new EmulatorItem
+                    {
+                        Id = "rpcs3",
+                        Name = "RPCS3",
+                        SupportedPlatforms = new List<string> { "Sony PlayStation 3" },
+                        GithubRepository = "RPCS3/rpcs3-binaries-win",
+                        ReleaseAssetPattern = "rpcs3-v0.0.*_win64.7z",
+                        ExecutablePath = "Emulators/PS3/rpcs3.exe",
+                        InstallFolder = "Emulators/PS3",
+                        ArchiveType = "7z",
+                        InstalledVersion = "0.0.30",
+                        LatestVersion = "0.0.30",
+                        Status = "Installed",
+                        RequiresBIOS = false,
+                        RequiresFirmware = true,
+                        DefaultLaunchArguments = "--fullscreen"
+                    }
+                },
+                DefaultEmulators = new Dictionary<string, string>
+                {
+                    { "Sony PlayStation 1", "Emulators/PS1/duckstation.exe" },
+                    { "Sony PlayStation 2", "Emulators/PS2/pcsx2.exe" },
+                    { "Sony PlayStation 3", "Emulators/PS3/rpcs3.exe" }
+                }
+            };
+        }
+
+        // Helper Utilities
+        private string ResolvePath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return "";
+            if (Path.IsPathRooted(path)) return path;
+            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, path));
+        }
+
+        private string MakeRelativePath(string fullPath)
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            if (fullPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+            {
+                return fullPath.Substring(baseDir.Length).TrimStart(Path.DirectorySeparatorChar);
+            }
+            return fullPath;
+        }
+
+        private static string? FindExecutableInFolder(string folder)
+        {
+            // First search top-level folder
+            var exes = Directory.GetFiles(folder, "*.exe", SearchOption.TopDirectoryOnly);
+            if (exes.Length > 0) return exes[0];
+
+            // Search recursively
+            exes = Directory.GetFiles(folder, "*.exe", SearchOption.AllDirectories);
+            return exes.Length > 0 ? exes[0] : null;
+        }
+
+        private static bool Extract7zUsingTar(string archivePath, string destDir)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "tar.exe",
+                    Arguments = $"-xf \"{archivePath}\" -C \"{destDir}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using (var proc = Process.Start(psi))
+                {
+                    proc?.WaitForExit();
+                    return proc?.ExitCode == 0;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static async Task<(string TagName, string DownloadUrl)?> GetLatestReleaseInfoAsync(string repo)
+        {
+            using (var client = new HttpClient())
+            {
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher");
+                string response = await client.GetStringAsync($"https://api.github.com/repos/{repo}/releases/latest");
+                using (var doc = JsonDocument.Parse(response))
+                {
+                    var root = doc.RootElement;
+                    string tagName = root.GetProperty("tag_name").GetString() ?? "";
+                    string downloadUrl = "";
+
+                    if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var asset in assets.EnumerateArray())
+                        {
+                            string name = asset.GetProperty("name").GetString()?.ToLower() ?? "";
+                            if ((name.Contains("win") || name.Contains("x64") || name.Contains("x86_64") || name.Contains("windows")) &&
+                                (name.EndsWith(".zip") || name.EndsWith(".7z")))
+                            {
+                                downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+                                break;
+                            }
+                        }
+
+                        if (string.IsNullOrEmpty(downloadUrl) && assets.GetArrayLength() > 0)
+                        {
+                            foreach (var asset in assets.EnumerateArray())
+                            {
+                                string name = asset.GetProperty("name").GetString()?.ToLower() ?? "";
+                                if (name.EndsWith(".zip") || name.EndsWith(".7z"))
+                                {
+                                    downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(tagName) && !string.IsNullOrEmpty(downloadUrl))
+                    {
+                        return (tagName, downloadUrl);
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static bool IsUpdateAvailable(string currentVersion, string latestVersion)
+        {
+            if (string.IsNullOrEmpty(currentVersion) || string.IsNullOrEmpty(latestVersion)) return false;
+            string cleanCurrent = CleanVersionString(currentVersion);
+            string cleanLatest = CleanVersionString(latestVersion);
+
+            if (Version.TryParse(cleanCurrent, out Version? valCurrent) && 
+                Version.TryParse(cleanLatest, out Version? valLatest))
+            {
+                return valLatest > valCurrent;
+            }
+            return string.Compare(cleanLatest, cleanCurrent, StringComparison.OrdinalIgnoreCase) > 0;
+        }
+
+        private static string CleanVersionString(string ver)
+        {
+            ver = ver.Trim().ToLower().TrimStart('v').TrimStart('r');
+            int dashIndex = ver.IndexOf('-');
+            if (dashIndex > 0) ver = ver.Substring(0, dashIndex);
+            return ver;
+        }
+
+        public async Task<bool> InstallDuckStationFromApiAsync(string apiEndpoint, Action<int> progressCallback)
+        {
+            string tempFile = "";
+            string tempExtractDir = "";
+            try
+            {
+                var api = new ApiClient();
+
+                // 1. Fetch package info from API
+                var info = await api.GetDuckStationPackageAsync(apiEndpoint);
+                if (info == null || string.IsNullOrEmpty(info.DownloadUrl))
+                {
+                    throw new Exception("Invalid API response or download URL is missing.");
+                }
+
+                // 2. Download and verify package
+                tempFile = await api.DownloadAndVerifyPackageAsync(info.DownloadUrl, info.FileName, info.Sha256, progressCallback);
+
+                // 3. Safe Extract
+                string destDir = ResolvePath("Emulators/DuckStation");
+                tempExtractDir = Path.Combine(Path.GetTempPath(), "DuckStation_Extract_Temp_" + Guid.NewGuid().ToString("N"));
+
+                await api.ExtractPackageAsync(tempFile, info.ArchiveType, tempExtractDir);
+
+                // Verify executable exists in the temp directory
+                string? exeInTemp = FindExecutableInFolder(tempExtractDir);
+                if (string.IsNullOrEmpty(exeInTemp) || !File.Exists(exeInTemp))
+                {
+                    throw new Exception("DuckStation executable not found in the extracted package.");
+                }
+
+                // Overwrite destination without deleting saves/bios/configs
+                CopyDirectory(tempExtractDir, destDir);
+
+                // Find where the executable is in destination
+                string relativeExePath = MakeRelativePath(Path.Combine(destDir, Path.GetFileName(exeInTemp)));
+
+                // 4. Update configuration
+                var item = Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, "duckstation", StringComparison.OrdinalIgnoreCase));
+                if (item != null)
+                {
+                    item.InstalledVersion = info.Version;
+                    item.LatestVersion = info.Version;
+                    item.Status = "Installed";
+                    item.ExecutablePath = relativeExePath.Replace('\\', '/');
+                    SaveEmulators();
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"DuckStation API installation failed: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(tempFile) && File.Exists(tempFile)) File.Delete(tempFile);
+                    if (!string.IsNullOrEmpty(tempExtractDir) && Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true);
+                }
+                catch { }
+            }
+        }
+
+        private static void CopyDirectory(string sourceDir, string destDir)
+        {
+            if (!Directory.Exists(destDir))
+            {
+                Directory.CreateDirectory(destDir);
+            }
+
+            foreach (string file in Directory.GetFiles(sourceDir))
+            {
+                string destFile = Path.Combine(destDir, Path.GetFileName(file));
+                File.Copy(file, destFile, true);
+            }
+
+            foreach (string subDir in Directory.GetDirectories(sourceDir))
+            {
+                string dirName = Path.GetFileName(subDir).ToLower();
+                if (dirName == "bios" || dirName == "saves" || dirName == "configs" || dirName == "screenshots" || dirName == "games" || dirName == "roms")
+                {
+                    continue;
+                }
+
+                string destSubDir = Path.Combine(destDir, Path.GetFileName(subDir));
+                CopyDirectory(subDir, destSubDir);
+            }
+        }
+    }
+}

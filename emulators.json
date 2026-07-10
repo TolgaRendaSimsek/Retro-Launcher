@@ -1,0 +1,63 @@
+{
+  "Emulators": [
+    {
+      "Id": "duckstation",
+      "Name": "DuckStation",
+      "SupportedPlatforms": [
+        "Sony PlayStation 1"
+      ],
+      "GithubRepository": "stenzek/duckstation",
+      "ReleaseAssetPattern": "duckstation-windows-x64-release.zip",
+      "ExecutablePath": "Emulators/PS1/duckstation.exe",
+      "InstallFolder": "Emulators/PS1",
+      "ArchiveType": "zip",
+      "InstalledVersion": "1.0.0",
+      "LatestVersion": "1.0.0",
+      "Status": "Installed",
+      "RequiresBIOS": true,
+      "RequiresFirmware": false,
+      "DefaultLaunchArguments": "-fullscreen"
+    },
+    {
+      "Id": "pcsx2",
+      "Name": "PCSX2",
+      "SupportedPlatforms": [
+        "Sony PlayStation 2"
+      ],
+      "GithubRepository": "PCSX2/pcsx2",
+      "ReleaseAssetPattern": "pcsx2-v1.7.*-windows-x64-Qt.7z",
+      "ExecutablePath": "Emulators/PS2/pcsx2.exe",
+      "InstallFolder": "Emulators/PS2",
+      "ArchiveType": "7z",
+      "InstalledVersion": "1.7.0",
+      "LatestVersion": "1.7.0",
+      "Status": "Installed",
+      "RequiresBIOS": true,
+      "RequiresFirmware": false,
+      "DefaultLaunchArguments": "-fullscreen"
+    },
+    {
+      "Id": "rpcs3",
+      "Name": "RPCS3",
+      "SupportedPlatforms": [
+        "Sony PlayStation 3"
+      ],
+      "GithubRepository": "RPCS3/rpcs3-binaries-win",
+      "ReleaseAssetPattern": "rpcs3-v0.0.*_win64.7z",
+      "ExecutablePath": "Emulators/PS3/rpcs3.exe",
+      "InstallFolder": "Emulators/PS3",
+      "ArchiveType": "7z",
+      "InstalledVersion": "0.0.30",
+      "LatestVersion": "0.0.30",
+      "Status": "Installed",
+      "RequiresBIOS": false,
+      "RequiresFirmware": true,
+      "DefaultLaunchArguments": "--fullscreen"
+    }
+  ],
+  "DefaultEmulators": {
+    "Sony PlayStation 1": "Emulators/PS1/duckstation.exe",
+    "Sony PlayStation 2": "Emulators/PS2/pcsx2.exe",
+    "Sony PlayStation 3": "Emulators/PS3/rpcs3.exe"
+  }
+}

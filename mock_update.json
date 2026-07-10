@@ -1,0 +1,7 @@
+{
+  "Version": "1.1.0",
+  "Name": "RetroLauncher v1.1.0 Stable Update",
+  "Changelog": "• Added backend-ready Friends System\n• Added Auto-Updater with channels (Stable, Beta, Nightly)\n• Dark theme improvements\n• Performance optimizations",
+  "DownloadUrl": "mock_update.zip",
+  "Channel": "stable"
+}
