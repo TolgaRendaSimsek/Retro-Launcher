@@ -1,0 +1,2 @@
+Place your PlayStation 1 BIOS files (e.g., scph5501.bin, SCPH1001.bin) here.
+RetroLauncher will scan this folder and automatically sync the files to DuckStation.

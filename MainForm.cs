@@ -15,6 +15,11 @@ namespace RetroLauncher
         private Control? _selectedCard = null;
         private bool _isGridView = true;
 
+        private bool _isFullscreen = false;
+        private FormWindowState _prevWindowState;
+        private FormBorderStyle _prevFormBorderStyle;
+        private Rectangle _prevBounds;
+
         public static event EventHandler<string>? GameProcessExited;
         private System.Windows.Forms.Timer? _mainSessionTimer;
 
@@ -44,6 +49,7 @@ namespace RetroLauncher
         {
             InitializeComponent();
             SetupFormEvents();
+            SetupResponsiveLayout();
         }
 
         private void SetupFormEvents()
@@ -215,6 +221,331 @@ namespace RetroLauncher
             btn.MouseLeave += (s, e) => btn.BackColor = normalColor;
         }
 
+        private void SetupResponsiveLayout()
+        {
+            this.AutoScaleMode = AutoScaleMode.Dpi;
+            this.FormBorderStyle = FormBorderStyle.Sizable;
+            this.MaximizeBox = true;
+            this.MinimumSize = new Size(850, 600);
+            this.KeyPreview = true;
+
+            // Load and restore previous window size and state
+            var settings = SettingsManager.LoadSettings();
+            if (settings.WindowWidth > 100 && settings.WindowHeight > 100)
+            {
+                this.Size = new Size(settings.WindowWidth, settings.WindowHeight);
+                if (settings.WindowLeft >= 0 && settings.WindowTop >= 0)
+                {
+                    this.StartPosition = FormStartPosition.Manual;
+                    this.Left = settings.WindowLeft;
+                    this.Top = settings.WindowTop;
+                }
+                if (settings.IsMaximized)
+                {
+                    this.WindowState = FormWindowState.Maximized;
+                }
+            }
+
+            // Hook KeyDown for fullscreen toggles (F11) and escape
+            this.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.F11)
+                {
+                    ToggleFullscreen();
+                    e.Handled = true;
+                }
+                else if (e.KeyCode == Keys.Escape)
+                {
+                    ExitFullscreen();
+                    e.Handled = true;
+                }
+            };
+
+            // FormClosing to save size and state
+            this.FormClosing += (s, e) =>
+            {
+                var currentSettings = SettingsManager.LoadSettings();
+                if (!_isFullscreen)
+                {
+                    currentSettings.IsMaximized = (this.WindowState == FormWindowState.Maximized);
+                    if (this.WindowState == FormWindowState.Normal)
+                    {
+                        currentSettings.WindowWidth = this.Width;
+                        currentSettings.WindowHeight = this.Height;
+                        currentSettings.WindowLeft = this.Left;
+                        currentSettings.WindowTop = this.Top;
+                    }
+                    else
+                    {
+                        currentSettings.WindowWidth = _prevBounds.Width > 0 ? _prevBounds.Width : this.RestoreBounds.Width;
+                        currentSettings.WindowHeight = _prevBounds.Height > 0 ? _prevBounds.Height : this.RestoreBounds.Height;
+                        currentSettings.WindowLeft = _prevBounds.Width > 0 ? _prevBounds.Left : this.RestoreBounds.Left;
+                        currentSettings.WindowTop = _prevBounds.Height > 0 ? _prevBounds.Top : this.RestoreBounds.Top;
+                    }
+                }
+                else
+                {
+                    currentSettings.IsMaximized = (_prevWindowState == FormWindowState.Maximized);
+                    currentSettings.WindowWidth = _prevBounds.Width;
+                    currentSettings.WindowHeight = _prevBounds.Height;
+                    currentSettings.WindowLeft = _prevBounds.Left;
+                    currentSettings.WindowTop = _prevBounds.Top;
+                }
+                SettingsManager.SaveSettings(currentSettings);
+            };
+
+            // Rebuild pnlTop right buttons flow
+            pnlTop.Controls.Remove(btnProfile);
+            pnlTop.Controls.Remove(btnAppearance);
+            pnlTop.Controls.Remove(btnManageEmulators);
+            pnlTop.Controls.Remove(btnAddGame);
+
+            FlowLayoutPanel flpTopRight = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Right,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Width = 580,
+                Height = 60,
+                Padding = new Padding(0, 10, 10, 0),
+                BackColor = Color.Transparent
+            };
+            
+            flpTopRight.Controls.Add(btnProfile);
+            flpTopRight.Controls.Add(btnAppearance);
+            flpTopRight.Controls.Add(btnManageEmulators);
+            flpTopRight.Controls.Add(btnAddGame);
+
+            foreach (Control btn in flpTopRight.Controls)
+            {
+                btn.Margin = new Padding(5, 2, 5, 2);
+                btn.Height = 35;
+                btn.Anchor = AnchorStyles.None;
+            }
+            pnlTop.Controls.Add(flpTopRight);
+
+            // Rebuild pnlSidebar using TableLayoutPanel
+            pnlSidebar.Controls.Clear();
+            TableLayoutPanel tlpSidebar = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 8,
+                Padding = new Padding(10),
+                BackColor = Color.Transparent
+            };
+            tlpSidebar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F)); // lblSidebarHeader
+            tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F)); // lbConsoleFilter
+            tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F)); // btnManageSaves
+            tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F)); // btnManageScreenshots
+            tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F)); // btnManageVideos
+            tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F)); // btnManageControllers
+            tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F)); // btnLanguageSettings
+            tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 10F)); // spacing
+
+            lblSidebarHeader.Dock = DockStyle.Fill;
+            lblSidebarHeader.Margin = new Padding(5, 5, 5, 0);
+
+            lbConsoleFilter.Dock = DockStyle.Fill;
+            lbConsoleFilter.Margin = new Padding(5, 5, 5, 10);
+
+            btnManageSaves.Dock = DockStyle.Fill;
+            btnManageSaves.Margin = new Padding(5, 2, 5, 2);
+
+            btnManageScreenshots.Dock = DockStyle.Fill;
+            btnManageScreenshots.Margin = new Padding(5, 2, 5, 2);
+
+            btnManageVideos.Dock = DockStyle.Fill;
+            btnManageVideos.Margin = new Padding(5, 2, 5, 2);
+
+            btnManageControllers.Dock = DockStyle.Fill;
+            btnManageControllers.Margin = new Padding(5, 2, 5, 2);
+
+            btnLanguageSettings.Dock = DockStyle.Fill;
+            btnLanguageSettings.Margin = new Padding(5, 2, 5, 2);
+
+            tlpSidebar.Controls.Add(lblSidebarHeader, 0, 0);
+            tlpSidebar.Controls.Add(lbConsoleFilter, 0, 1);
+            tlpSidebar.Controls.Add(btnManageSaves, 0, 2);
+            tlpSidebar.Controls.Add(btnManageScreenshots, 0, 3);
+            tlpSidebar.Controls.Add(btnManageVideos, 0, 4);
+            tlpSidebar.Controls.Add(btnManageControllers, 0, 5);
+            tlpSidebar.Controls.Add(btnLanguageSettings, 0, 6);
+
+            pnlSidebar.Controls.Add(tlpSidebar);
+
+            // Rebuild pnlDetails using TableLayoutPanel
+            pnlDetails.Controls.Clear();
+            TableLayoutPanel tlpDetails = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 6,
+                Padding = new Padding(15),
+                BackColor = Color.Transparent
+            };
+            tlpDetails.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlpDetails.RowStyles.Add(new RowStyle(SizeType.Percent, 100F)); // pbDetailsCover
+            tlpDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 45F)); // lblDetailsTitle
+            tlpDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 25F)); // lblDetailsConsole
+            tlpDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F)); // btnPlay
+            tlpDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F)); // sub buttons table
+            tlpDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 55F)); // lblDetailsStatus
+
+            pbDetailsCover.Dock = DockStyle.Fill;
+            pbDetailsCover.Margin = new Padding(10);
+            
+            lblDetailsTitle.Dock = DockStyle.Fill;
+            lblDetailsTitle.Margin = new Padding(5, 2, 5, 2);
+
+            lblDetailsConsole.Dock = DockStyle.Fill;
+            lblDetailsConsole.Margin = new Padding(5, 0, 5, 2);
+
+            btnPlay.Dock = DockStyle.Fill;
+            btnPlay.Margin = new Padding(5, 5, 5, 5);
+
+            TableLayoutPanel tlpDetailsSubButtons = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0),
+                BackColor = Color.Transparent
+            };
+            tlpDetailsSubButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tlpDetailsSubButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tlpDetailsSubButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            btnEditPaths.Dock = DockStyle.Fill;
+            btnEditPaths.Margin = new Padding(5, 2, 2, 2);
+
+            btnDelete.Dock = DockStyle.Fill;
+            btnDelete.Margin = new Padding(2, 2, 5, 2);
+
+            tlpDetailsSubButtons.Controls.Add(btnEditPaths, 0, 0);
+            tlpDetailsSubButtons.Controls.Add(btnDelete, 1, 0);
+
+            lblDetailsStatus.Dock = DockStyle.Fill;
+            lblDetailsStatus.Margin = new Padding(5);
+
+            tlpDetails.Controls.Add(pbDetailsCover, 0, 0);
+            tlpDetails.Controls.Add(lblDetailsTitle, 0, 1);
+            tlpDetails.Controls.Add(lblDetailsConsole, 0, 2);
+            tlpDetails.Controls.Add(btnPlay, 0, 3);
+            tlpDetails.Controls.Add(tlpDetailsSubButtons, 0, 4);
+            tlpDetails.Controls.Add(lblDetailsStatus, 0, 5);
+
+            pnlDetails.Controls.Add(tlpDetails);
+
+            // Rebuild pnlLibraryToolbar using FlowLayoutPanel
+            pnlLibraryToolbar.Controls.Clear();
+            FlowLayoutPanel flpToolbar = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(10, 8, 10, 8),
+                BackColor = Color.Transparent
+            };
+
+            btnGridView.Margin = new Padding(5, 0, 5, 0);
+            btnGridView.Height = 30;
+            btnGridView.Width = 80;
+
+            btnListView.Margin = new Padding(5, 0, 15, 0);
+            btnListView.Height = 30;
+            btnListView.Width = 80;
+
+            lblSortBy.Margin = new Padding(5, 8, 5, 0);
+            lblSortBy.AutoSize = true;
+
+            cbSort.Margin = new Padding(5, 4, 15, 0);
+            cbSort.Height = 21;
+            cbSort.Width = 120;
+
+            lblFilterBy.Margin = new Padding(5, 8, 5, 0);
+            lblFilterBy.AutoSize = true;
+
+            cbFilter.Margin = new Padding(5, 4, 5, 0);
+            cbFilter.Height = 21;
+            cbFilter.Width = 120;
+
+            flpToolbar.Controls.AddRange(new Control[]
+            {
+                btnGridView, btnListView, lblSortBy, cbSort, lblFilterBy, cbFilter
+            });
+
+            pnlLibraryToolbar.Controls.Add(flpToolbar);
+
+            // Subscribe to grid size changes
+            flpGamesGrid.SizeChanged += (s, e) => flpGamesGrid_SizeChanged();
+        }
+
+        private void ToggleFullscreen()
+        {
+            if (!_isFullscreen)
+            {
+                _prevWindowState = this.WindowState;
+                _prevFormBorderStyle = this.FormBorderStyle;
+                _prevBounds = this.Bounds;
+
+                this.WindowState = FormWindowState.Normal;
+                this.FormBorderStyle = FormBorderStyle.None;
+                this.Bounds = Screen.FromControl(this).Bounds;
+                _isFullscreen = true;
+            }
+            else
+            {
+                this.FormBorderStyle = _prevFormBorderStyle;
+                this.Bounds = _prevBounds;
+                this.WindowState = _prevWindowState;
+                _isFullscreen = false;
+            }
+        }
+
+        private void ExitFullscreen()
+        {
+            if (_isFullscreen)
+            {
+                ToggleFullscreen();
+            }
+        }
+
+        private void flpGamesGrid_SizeChanged()
+        {
+            if (!_isGridView)
+            {
+                flpGamesGrid.SuspendLayout();
+                foreach (Control ctrl in flpGamesGrid.Controls)
+                {
+                    if (ctrl is GameListRow row)
+                    {
+                        row.Width = flpGamesGrid.ClientSize.Width - 35;
+                    }
+                }
+                flpGamesGrid.ResumeLayout();
+                return;
+            }
+
+            int clientWidth = flpGamesGrid.ClientSize.Width - flpGamesGrid.Padding.Horizontal;
+            int cardMinWith = 140;
+            int cardMargin = 10;
+            int colCount = Math.Max(1, clientWidth / (cardMinWith + cardMargin));
+            int targetWidth = (clientWidth / colCount) - cardMargin;
+
+            flpGamesGrid.SuspendLayout();
+            foreach (Control ctrl in flpGamesGrid.Controls)
+            {
+                if (ctrl is GameCard card)
+                {
+                    card.Width = targetWidth;
+                    card.Height = (int)(targetWidth * 1.53);
+                }
+            }
+            flpGamesGrid.ResumeLayout();
+        }
+
         private void MainForm_Load(object? sender, EventArgs e)
         {
             // Populate category sidebar
@@ -302,6 +633,8 @@ namespace RetroLauncher
                     flpGamesGrid.Controls.Add(row);
                 }
             }
+
+            flpGamesGrid_SizeChanged();
 
             // Restore selection or load default
             if (sortedResults.Count > 0)

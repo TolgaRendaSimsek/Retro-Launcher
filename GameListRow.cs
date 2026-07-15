@@ -38,6 +38,11 @@ namespace RetroLauncher
 
         private void SetupRow()
         {
+            pbThumb.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            lblTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblPlatform.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblPlaytime.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
             lblTitle.Text = Game.Title;
             lblPlatform.Text = Game.Platform;
             lblPlaytime.Text = $"Playtime: {Game.TotalPlaytimeMinutes} mins";

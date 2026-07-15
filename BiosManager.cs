@@ -10,7 +10,7 @@ namespace RetroLauncher
 {
     public class BiosManager
     {
-        private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bios.json");
+        private static readonly string ConfigPath = Path.Combine(AppContext.BaseDirectory, "bios.json");
         private static readonly object FileLock = new object();
 
         private BiosConfig _config = new();
@@ -20,6 +20,54 @@ namespace RetroLauncher
         public BiosManager()
         {
             LoadConfig();
+            EnsureCentralizedFoldersCreated();
+        }
+
+        public static string GetCentralizedBiosRoot()
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            return Path.Combine(localAppData, "RetroLauncher", "BIOS");
+        }
+
+        public void LogDiagnostic(string message)
+        {
+            try
+            {
+                string logDir = Path.Combine(AppContext.BaseDirectory, "logs");
+                if (!Directory.Exists(logDir))
+                {
+                    Directory.CreateDirectory(logDir);
+                }
+                string logFile = Path.Combine(logDir, "package_manager.log");
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                File.AppendAllText(logFile, $"[{timestamp}] [BIOS_MANAGER] {message}\n");
+            }
+            catch { }
+            System.Diagnostics.Debug.WriteLine(message);
+        }
+
+        public void EnsureCentralizedFoldersCreated()
+        {
+            string biosRoot = GetCentralizedBiosRoot();
+            string[] subfolders = new[]
+            {
+                "DuckStation/PS1",
+                "PCSX2/PS2",
+                "RPCS3/PS3",
+                "PPSSPP/PSP",
+                "Dolphin/GameCube",
+                "Dolphin/Wii",
+                "RetroArch"
+            };
+
+            foreach (var sf in subfolders)
+            {
+                string dir = Path.Combine(biosRoot, sf.Replace('/', Path.DirectorySeparatorChar));
+                if (!Directory.Exists(dir))
+                {
+                    try { Directory.CreateDirectory(dir); } catch { }
+                }
+            }
         }
 
         public List<BiosItem> BiosItems => _config.BiosItems;
@@ -34,6 +82,44 @@ namespace RetroLauncher
                     {
                         string json = File.ReadAllText(ConfigPath);
                         _config = JsonSerializer.Deserialize<BiosConfig>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new BiosConfig();
+
+                        // Merge default items for missing consoles/emulators
+                        var defaultItems = GetDefaultBiosItems();
+                        bool updated = false;
+                        foreach (var def in defaultItems)
+                        {
+                            var existing = _config.BiosItems.FirstOrDefault(b => string.Equals(b.Console, def.Console, StringComparison.OrdinalIgnoreCase));
+                            if (existing == null)
+                            {
+                                _config.BiosItems.Add(def);
+                                updated = true;
+                            }
+                            else
+                            {
+                                // Migrate fields if empty (like Emulator and Platform)
+                                if (string.IsNullOrEmpty(existing.Emulator))
+                                {
+                                    existing.Emulator = def.Emulator;
+                                    updated = true;
+                                }
+                                if (string.IsNullOrEmpty(existing.Platform))
+                                {
+                                    existing.Platform = def.Platform;
+                                    updated = true;
+                                }
+                                // If path was the old path "Emulators/...", update it to new centralized path if not modified or is missing
+                                if (existing.Path.StartsWith("Emulators/", StringComparison.OrdinalIgnoreCase) && existing.Status == "Missing")
+                                {
+                                    existing.Path = def.Path;
+                                    updated = true;
+                                }
+                            }
+                        }
+
+                        if (updated)
+                        {
+                            SaveConfig();
+                        }
                     }
                     else
                     {
@@ -48,6 +134,20 @@ namespace RetroLauncher
 
                 DetectBiosStatus();
             }
+        }
+
+        private List<BiosItem> GetDefaultBiosItems()
+        {
+            return new List<BiosItem>
+            {
+                new BiosItem { Emulator = "DuckStation", Platform = "PS1", Console = "Sony PlayStation 1", Path = "BIOS/DuckStation/PS1/scph5501.bin", FileName = "scph5501.bin", Status = "Missing" },
+                new BiosItem { Emulator = "PCSX2", Platform = "PS2", Console = "Sony PlayStation 2", Path = "BIOS/PCSX2/PS2/scph39001.bin", FileName = "scph39001.bin", Status = "Missing" },
+                new BiosItem { Emulator = "RPCS3", Platform = "PS3", Console = "Sony PlayStation 3", Path = "BIOS/RPCS3/PS3/PS3UPDAT.PUP", FileName = "PS3UPDAT.PUP", Status = "Missing" },
+                new BiosItem { Emulator = "PPSSPP", Platform = "PSP", Console = "Sony PlayStation Portable", Path = "BIOS/PPSSPP/PSP/gptokernel.prx", FileName = "gptokernel.prx", Status = "Missing" },
+                new BiosItem { Emulator = "Dolphin", Platform = "GameCube", Console = "Nintendo GameCube", Path = "BIOS/Dolphin/GameCube/ipl_usa.bin", FileName = "ipl_usa.bin", Status = "Missing" },
+                new BiosItem { Emulator = "Dolphin", Platform = "Wii", Console = "Nintendo Wii", Path = "BIOS/Dolphin/Wii/rvl.bin", FileName = "rvl.bin", Status = "Missing" },
+                new BiosItem { Emulator = "RetroArch", Platform = "Common", Console = "RetroArch", Path = "BIOS/RetroArch/system.bin", FileName = "system.bin", Status = "Missing" }
+            };
         }
 
         public void SaveConfig()
@@ -70,21 +170,101 @@ namespace RetroLauncher
         {
             foreach (var item in _config.BiosItems)
             {
-                if (string.IsNullOrEmpty(item.Path))
+                string biosFolder = GetDefaultFolderForConsole(item.Console);
+                string resolvedFolder = ResolvePath(biosFolder);
+                bool found = false;
+
+                // Auto-create directory
+                if (!Directory.Exists(resolvedFolder))
                 {
-                    item.Status = "Missing";
-                    continue;
+                    try
+                    {
+                        Directory.CreateDirectory(resolvedFolder);
+                        LogDiagnostic($"Created BIOS directory: {resolvedFolder}");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogDiagnostic($"Failed to create BIOS directory '{resolvedFolder}': {ex.Message}");
+                    }
                 }
 
-                string resolved = ResolvePath(item.Path);
-                if (File.Exists(resolved))
+                if (Directory.Exists(resolvedFolder))
                 {
-                    item.Status = "Ready";
+                    try
+                    {
+                        // Recursively scan directories
+                        var files = Directory.GetFiles(resolvedFolder, "*.*", SearchOption.AllDirectories);
+
+                        LogDiagnostic($"Scanning BIOS folder for {item.Console}: '{resolvedFolder}'");
+                        LogDiagnostic($"Found {files.Length} files in target folder.");
+                        foreach (var file in files)
+                        {
+                            LogDiagnostic($"Detected BIOS File: '{Path.GetFileName(file)}' at '{file}'");
+                        }
+
+                        // Accept .bin and .rom case-insensitively (along with .pup and .prx)
+                        var validFile = files.FirstOrDefault(f => 
+                            f.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || 
+                            f.EndsWith(".rom", StringComparison.OrdinalIgnoreCase) || 
+                            f.EndsWith(".pup", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".prx", StringComparison.OrdinalIgnoreCase));
+
+                        if (validFile != null)
+                        {
+                            // Save only after a real file is found
+                            item.Path = MakeRelativePath(validFile).Replace('\\', '/');
+                            item.FileName = Path.GetFileName(validFile);
+                            item.Status = "Ready";
+                            found = true;
+                            LogDiagnostic($"Discovered active BIOS for {item.Console}: '{item.FileName}' ({item.Path})");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogDiagnostic($"Error scanning BIOS directory '{resolvedFolder}': {ex.Message}");
+                    }
                 }
-                else
+
+                if (!found)
+                {
+                    if (!string.IsNullOrEmpty(item.Path))
+                    {
+                        string resolvedFile = ResolvePath(item.Path);
+                        if (File.Exists(resolvedFile))
+                        {
+                            item.Status = "Ready";
+                            found = true;
+                            LogDiagnostic($"Fallback active BIOS for {item.Console}: '{item.FileName}' ({item.Path})");
+                        }
+                    }
+                }
+
+                if (!found)
                 {
                     item.Status = "Missing";
                 }
+            }
+            SaveConfig();
+        }
+
+        public bool CheckRealBiosExists(string console)
+        {
+            string folder = GetDefaultFolderForConsole(console);
+            string resolved = ResolvePath(folder);
+            if (!Directory.Exists(resolved)) return false;
+
+            try
+            {
+                var files = Directory.GetFiles(resolved, "*.*", SearchOption.AllDirectories);
+                return files.Any(f => 
+                    f.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || 
+                    f.EndsWith(".rom", StringComparison.OrdinalIgnoreCase) || 
+                    f.EndsWith(".pup", StringComparison.OrdinalIgnoreCase)
+                );
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -107,6 +287,11 @@ namespace RetroLauncher
 
                 string resolvedDestFile = ResolvePath(destFile);
                 File.Copy(sourceFile, resolvedDestFile, true);
+
+                if (!File.Exists(resolvedDestFile))
+                {
+                    return false;
+                }
 
                 item.Path = destFile.Replace('\\', '/');
                 item.FileName = fileName;
@@ -222,41 +407,172 @@ namespace RetroLauncher
         {
             _config = new BiosConfig
             {
-                BiosItems = new List<BiosItem>
-                {
-                    new BiosItem { Console = "Sony PlayStation 1", Path = "Emulators/PS1/bios/scph5501.bin", FileName = "scph5501.bin", Status = "Missing" },
-                    new BiosItem { Console = "Sony PlayStation 2", Path = "Emulators/PS2/bios/scph39001.bin", FileName = "scph39001.bin", Status = "Missing" },
-                    new BiosItem { Console = "Sony PlayStation 3", Path = "Emulators/PS3/dev_flash/PS3UPDAT.PUP", FileName = "PS3UPDAT.PUP", Status = "Missing" }
-                }
+                BiosItems = GetDefaultBiosItems()
             };
             SaveConfig();
         }
 
-        private string GetDefaultFolderForConsole(string console)
+        public string GetDefaultFolderForConsole(string console)
         {
+            var item = _config.BiosItems.FirstOrDefault(b => string.Equals(b.Console, console, StringComparison.OrdinalIgnoreCase));
+            if (item != null)
+            {
+                if (string.Equals(item.Emulator, "RetroArch", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "BIOS/RetroArch";
+                }
+                return $"BIOS/{item.Emulator}/{item.Platform}";
+            }
             return console switch
             {
-                "Sony PlayStation 1" => "Emulators/PS1/bios",
-                "Sony PlayStation 2" => "Emulators/PS2/bios",
-                "Sony PlayStation 3" => "Emulators/PS3/dev_flash",
-                _ => "Emulators/Common/bios"
+                "Sony PlayStation 1" => "BIOS/DuckStation/PS1",
+                "Sony PlayStation 2" => "BIOS/PCSX2/PS2",
+                "Sony PlayStation 3" => "BIOS/RPCS3/PS3",
+                "Sony PlayStation Portable" => "BIOS/PPSSPP/PSP",
+                "Nintendo GameCube" => "BIOS/Dolphin/GameCube",
+                "Nintendo Wii" => "BIOS/Dolphin/Wii",
+                "RetroArch" => "BIOS/RetroArch",
+                _ => "BIOS/RetroArch"
             };
         }
 
-        private string ResolvePath(string path)
+        public string GetEmulatorExpectedFolder(string emulator, string platform)
+        {
+            return emulator.ToLower() switch
+            {
+                "duckstation" => "Emulators/PS1/bios",
+                "pcsx2" => "Emulators/PS2/bios",
+                "rpcs3" => "Emulators/PS3/dev_flash",
+                "ppsspp" => "Emulators/PSP/bios",
+                "dolphin" => platform.ToLower() == "gamecube" ? "Emulators/Dolphin/User/GC" : "Emulators/Dolphin/User/Wii",
+                "retroarch" => "Emulators/RetroArch/system",
+                _ => $"Emulators/{emulator}/bios"
+            };
+        }
+
+        public bool SyncBiosToEmulator(BiosItem item)
+        {
+            string centralFolder = Path.GetDirectoryName(ResolvePath(item.Path)) ?? "";
+            if (!Directory.Exists(centralFolder)) return false;
+
+            try
+            {
+                var files = Directory.GetFiles(centralFolder, "*.*", SearchOption.AllDirectories);
+                var validFiles = files.Where(f => 
+                    f.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || 
+                    f.EndsWith(".rom", StringComparison.OrdinalIgnoreCase) || 
+                    f.EndsWith(".pup", StringComparison.OrdinalIgnoreCase) ||
+                    f.EndsWith(".prx", StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (!validFiles.Any()) return false;
+
+                string destFolder = ResolvePath(GetEmulatorExpectedFolder(item.Emulator, item.Platform));
+                if (!Directory.Exists(destFolder))
+                {
+                    Directory.CreateDirectory(destFolder);
+                }
+
+                foreach (var file in validFiles)
+                {
+                    string destFile = Path.Combine(destFolder, Path.GetFileName(file));
+                    File.Copy(file, destFile, true);
+
+                    // For DuckStation, create portable.txt beside execution folder
+                    if (string.Equals(item.Emulator, "DuckStation", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string emuDir = Path.GetDirectoryName(destFolder) ?? "";
+                        if (!string.IsNullOrEmpty(emuDir) && Directory.Exists(emuDir))
+                        {
+                            var exes = Directory.GetFiles(emuDir, "*.exe", SearchOption.AllDirectories);
+                            foreach (var exe in exes)
+                            {
+                                string portableFile = Path.Combine(Path.GetDirectoryName(exe) ?? "", "portable.txt");
+                                if (!File.Exists(portableFile))
+                                {
+                                    File.WriteAllText(portableFile, "");
+                                }
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to sync BIOS for {item.Emulator}: {ex.Message}");
+                return false;
+            }
+        }
+
+        public bool RemoveBiosFile(string console)
+        {
+            var item = _config.BiosItems.FirstOrDefault(b => string.Equals(b.Console, console, StringComparison.OrdinalIgnoreCase));
+            if (item == null) return false;
+
+            string biosFolder = GetDefaultFolderForConsole(console);
+            string resolvedFolder = ResolvePath(biosFolder);
+
+            try
+            {
+                if (Directory.Exists(resolvedFolder))
+                {
+                    var files = Directory.GetFiles(resolvedFolder, "*.*", SearchOption.AllDirectories);
+                    foreach (var file in files)
+                    {
+                        string ext = Path.GetExtension(file).ToLower();
+                        if (ext == ".bin" || ext == ".rom" || ext == ".pup" || ext == ".prx")
+                        {
+                            File.Delete(file);
+                        }
+                    }
+                }
+
+                item.Path = "";
+                item.FileName = "";
+                item.Status = "Missing";
+                SaveConfig();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to remove BIOS for {console}: {ex.Message}");
+                return false;
+            }
+        }
+
+        public string ResolvePath(string path)
         {
             if (string.IsNullOrEmpty(path)) return "";
             if (Path.IsPathRooted(path)) return path;
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, path));
+
+            if (path.StartsWith("BIOS/", StringComparison.OrdinalIgnoreCase) || path.StartsWith("BIOS\\", StringComparison.OrdinalIgnoreCase))
+            {
+                string relative = path.Substring(5);
+                return Path.GetFullPath(Path.Combine(GetCentralizedBiosRoot(), relative));
+            }
+            if (string.Equals(path, "BIOS", StringComparison.OrdinalIgnoreCase))
+            {
+                return GetCentralizedBiosRoot();
+            }
+
+            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
         }
 
         private string MakeRelativePath(string fullPath)
         {
             if (string.IsNullOrEmpty(fullPath)) return "";
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            string localRoot = GetCentralizedBiosRoot();
+            if (fullPath.StartsWith(localRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                string relative = fullPath.Substring(localRoot.Length).TrimStart(Path.DirectorySeparatorChar);
+                return Path.Combine("BIOS", relative).Replace('\\', '/');
+            }
+
+            string baseDir = AppContext.BaseDirectory;
             if (fullPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
             {
-                return fullPath.Substring(baseDir.Length).TrimStart(Path.DirectorySeparatorChar);
+                return fullPath.Substring(baseDir.Length).TrimStart(Path.DirectorySeparatorChar).Replace('\\', '/');
             }
             return fullPath;
         }

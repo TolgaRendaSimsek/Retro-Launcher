@@ -90,27 +90,110 @@ namespace RetroLauncher
             // 3. Verify emulator installation
             if (!adapter.IsInstalled())
             {
-                throw new FileNotFoundException($"Emulator executable not found at:\n'{adapter.GetExecutablePath()}'");
+                string exePath = adapter.GetExecutablePath();
+                string folder = !string.IsNullOrEmpty(exePath) ? Path.GetDirectoryName(exePath) ?? "Unknown" : "Unknown";
+                string expected = !string.IsNullOrEmpty(exePath) ? Path.GetFileName(exePath) : "Executable containing 'duckstation'";
+                
+                if (string.Equals(adapter.EmulatorId, "duckstation", StringComparison.OrdinalIgnoreCase))
+                {
+                    expected = "Executable containing 'duckstation' (e.g. duckstation-qt-x64-ReleaseLTCG.exe)";
+                }
+
+                throw new FileNotFoundException(
+                    $"Emulator executable not found!\n\n" +
+                    $"Expected File: {expected}\n" +
+                    $"Searched Folder: {folder}"
+                );
             }
 
             // 4. Verify BIOS or firmware requirements
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, adapter.EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emu != null)
             {
+                // Rescan BIOS/firmware folder right before verification to check real filesystem
+                BiosManager.Instance.DetectBiosStatus();
+
                 if (emu.RequiresBIOS)
                 {
-                    var bios = BiosManager.Instance.BiosItems.FirstOrDefault(b => string.Equals(b.Console, game.Platform, StringComparison.OrdinalIgnoreCase));
-                    if (bios == null || bios.Status != "Ready")
+                    // Find the matching centralized BIOS configuration
+                    var biosItem = BiosManager.Instance.BiosItems.FirstOrDefault(b => 
+                        string.Equals(b.Emulator, emu.Name, StringComparison.OrdinalIgnoreCase) || 
+                        string.Equals(b.Console, game.Platform, StringComparison.OrdinalIgnoreCase));
+
+                    bool hasRealBios = biosItem != null && BiosManager.Instance.CheckRealBiosExists(biosItem.Console);
+                    if (!hasRealBios)
                     {
-                        throw new InvalidOperationException($"The platform '{game.Platform}' requires a BIOS file to run, which is missing. Please configure it in the BIOS/Firmware Manager.");
+                        string defaultFolder = biosItem != null ? BiosManager.Instance.GetDefaultFolderForConsole(biosItem.Console) : "BIOS";
+                        string resolvedFolder = ResolvePath(defaultFolder);
+
+                        var detectedFiles = new List<string>();
+                        if (Directory.Exists(resolvedFolder))
+                        {
+                            try
+                            {
+                                detectedFiles = Directory.GetFiles(resolvedFolder, "*.*", SearchOption.AllDirectories)
+                                    .Select(Path.GetFileName)
+                                    .Where(name => name != null)
+                                    .Select(name => name!)
+                                    .ToList();
+                            }
+                            catch { }
+                        }
+                        string detectedText = detectedFiles.Any() ? string.Join(", ", detectedFiles) : "(No files found)";
+
+                        throw new InvalidOperationException(
+                            $"The platform '{game.Platform}' requires a BIOS file to run, which is missing from the centralized BIOS directory!\n\n" +
+                            $"Searched Path: {resolvedFolder}\n" +
+                            $"Detected Filenames: {detectedText}\n\n" +
+                            $"Please open the BIOS/Firmware Manager and import a legally obtained BIOS file."
+                        );
+                    }
+
+                    // Synchronize the BIOS to the emulator's expected directory before launching
+                    if (biosItem != null)
+                    {
+                        BiosManager.Instance.SyncBiosToEmulator(biosItem);
                     }
                 }
                 else if (emu.RequiresFirmware)
                 {
-                    var fw = BiosManager.Instance.BiosItems.FirstOrDefault(b => string.Equals(b.Console, game.Platform, StringComparison.OrdinalIgnoreCase));
-                    if (fw == null || fw.Status != "Ready")
+                    // For firmware like RPCS3, synchronize it as well
+                    var fwItem = BiosManager.Instance.BiosItems.FirstOrDefault(b => 
+                        string.Equals(b.Emulator, emu.Name, StringComparison.OrdinalIgnoreCase) || 
+                        string.Equals(b.Console, game.Platform, StringComparison.OrdinalIgnoreCase));
+
+                    bool hasRealFw = fwItem != null && BiosManager.Instance.CheckRealBiosExists(fwItem.Console);
+                    if (!hasRealFw)
                     {
-                        throw new InvalidOperationException($"The platform '{game.Platform}' requires emulator system firmware to run, which is missing. Please configure it in the BIOS/Firmware Manager.");
+                        string defaultFolder = fwItem != null ? BiosManager.Instance.GetDefaultFolderForConsole(fwItem.Console) : "BIOS";
+                        string resolvedFolder = ResolvePath(defaultFolder);
+
+                        var detectedFiles = new List<string>();
+                        if (Directory.Exists(resolvedFolder))
+                        {
+                            try
+                            {
+                                detectedFiles = Directory.GetFiles(resolvedFolder, "*.*", SearchOption.AllDirectories)
+                                    .Select(Path.GetFileName)
+                                    .Where(name => name != null)
+                                    .Select(name => name!)
+                                    .ToList();
+                            }
+                            catch { }
+                        }
+                        string detectedText = detectedFiles.Any() ? string.Join(", ", detectedFiles) : "(No files found)";
+
+                        throw new InvalidOperationException(
+                            $"The platform '{game.Platform}' requires emulator system firmware to run, which is missing from the centralized BIOS directory!\n\n" +
+                            $"Searched Path: {resolvedFolder}\n" +
+                            $"Detected Filenames: {detectedText}\n\n" +
+                            $"Please open the BIOS/Firmware Manager and import the firmware file."
+                        );
+                    }
+
+                    if (fwItem != null)
+                    {
+                        BiosManager.Instance.SyncBiosToEmulator(fwItem);
                     }
                 }
             }
@@ -189,7 +272,7 @@ namespace RetroLauncher
         {
             if (string.IsNullOrEmpty(path)) return "";
             if (Path.IsPathRooted(path)) return path;
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, path));
+            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
         }
     }
 }

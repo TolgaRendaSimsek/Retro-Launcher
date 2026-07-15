@@ -214,6 +214,9 @@ namespace RetroLauncher
                 int idx = lbEmulators.SelectedIndex;
                 lbEmulators.Items[idx] = selectedEmu;
                 _isUpdatingSelection = false;
+
+                // Save config immediately
+                EmulatorManager.SaveConfig(_config);
             }
         }
 
@@ -241,6 +244,9 @@ namespace RetroLauncher
                 {
                     _config.DefaultEmulators[selectedConsole] = selectedEmu.Path;
                 }
+
+                // Save config immediately
+                EmulatorManager.SaveConfig(_config);
             }
         }
 
@@ -382,7 +388,7 @@ namespace RetroLauncher
             if (string.IsNullOrEmpty(path)) return "";
             if (Path.IsPathRooted(path)) return path;
 
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string baseDir = AppContext.BaseDirectory;
             string testPath1 = Path.Combine(baseDir, path);
             if (File.Exists(testPath1) || Directory.Exists(testPath1)) return testPath1;
 
@@ -396,7 +402,7 @@ namespace RetroLauncher
         {
             if (string.IsNullOrEmpty(fullPath)) return "";
 
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string baseDir = AppContext.BaseDirectory;
             string workingDir = Directory.GetCurrentDirectory();
 
             if (fullPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))

@@ -1,0 +1,2 @@
+Place your PSP system/BIOS files (e.g., gptokernel.prx) here.
+RetroLauncher will scan this folder and automatically sync the files to PPSSPP.

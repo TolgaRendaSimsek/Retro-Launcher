@@ -8,13 +8,14 @@ namespace RetroLauncher
         private System.Windows.Forms.Label lblStatusVal;
         private System.Windows.Forms.Label lblPathHeader;
         private System.Windows.Forms.TextBox tbPath;
-        private System.Windows.Forms.Button btnLocate;
+        private System.Windows.Forms.Button btnVerify;
         private System.Windows.Forms.Button btnImport;
-        private System.Windows.Forms.Button btnDownload;
+        private System.Windows.Forms.Button btnSync;
         private System.Windows.Forms.Button btnOpenFolder;
         private System.Windows.Forms.Button btnClose;
         private System.Windows.Forms.ProgressBar pbProgress;
         private System.Windows.Forms.Label lblDownloadStatus;
+        private System.Windows.Forms.Button btnRemove;
 
         protected override void Dispose(bool disposing)
         {
@@ -32,13 +33,14 @@ namespace RetroLauncher
             this.lblStatusVal = new System.Windows.Forms.Label();
             this.lblPathHeader = new System.Windows.Forms.Label();
             this.tbPath = new System.Windows.Forms.TextBox();
-            this.btnLocate = new System.Windows.Forms.Button();
+            this.btnVerify = new System.Windows.Forms.Button();
             this.btnImport = new System.Windows.Forms.Button();
-            this.btnDownload = new System.Windows.Forms.Button();
+            this.btnSync = new System.Windows.Forms.Button();
             this.btnOpenFolder = new System.Windows.Forms.Button();
             this.btnClose = new System.Windows.Forms.Button();
             this.pbProgress = new System.Windows.Forms.ProgressBar();
             this.lblDownloadStatus = new System.Windows.Forms.Label();
+            this.btnRemove = new System.Windows.Forms.Button();
             this.SuspendLayout();
             // 
             // lbConsoles
@@ -99,19 +101,6 @@ namespace RetroLauncher
             this.tbPath.Size = new System.Drawing.Size(460, 24);
             this.tbPath.TabIndex = 4;
             // 
-            // btnLocate
-            // 
-            this.btnLocate.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(44)))), ((int)(((byte)(44)))), ((int)(((byte)(52)))));
-            this.btnLocate.FlatAppearance.BorderSize = 0;
-            this.btnLocate.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnLocate.Font = new System.Drawing.Font("Segoe UI Semibold", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
-            this.btnLocate.ForeColor = System.Drawing.Color.White;
-            this.btnLocate.Location = new System.Drawing.Point(260, 130);
-            this.btnLocate.Name = "btnLocate";
-            this.btnLocate.Size = new System.Drawing.Size(220, 35);
-            this.btnLocate.TabIndex = 5;
-            this.btnLocate.Text = "🔍  Locate BIOS Manually";
-            this.btnLocate.UseVisualStyleBackColor = false;
             // 
             // btnImport
             // 
@@ -120,26 +109,12 @@ namespace RetroLauncher
             this.btnImport.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnImport.Font = new System.Drawing.Font("Segoe UI Semibold", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
             this.btnImport.ForeColor = System.Drawing.Color.White;
-            this.btnImport.Location = new System.Drawing.Point(500, 130);
+            this.btnImport.Location = new System.Drawing.Point(260, 130);
             this.btnImport.Name = "btnImport";
             this.btnImport.Size = new System.Drawing.Size(220, 35);
-            this.btnImport.TabIndex = 6;
-            this.btnImport.Text = "📥  Import BIOS File";
+            this.btnImport.TabIndex = 5;
+            this.btnImport.Text = "📥  Import BIOS";
             this.btnImport.UseVisualStyleBackColor = false;
-            // 
-            // btnDownload
-            // 
-            this.btnDownload.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(99)))), ((int)(((byte)(102)))), ((int)(((byte)(241)))));
-            this.btnDownload.FlatAppearance.BorderSize = 0;
-            this.btnDownload.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnDownload.Font = new System.Drawing.Font("Segoe UI Black", 9.5F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
-            this.btnDownload.ForeColor = System.Drawing.Color.White;
-            this.btnDownload.Location = new System.Drawing.Point(260, 180);
-            this.btnDownload.Name = "btnDownload";
-            this.btnDownload.Size = new System.Drawing.Size(460, 40);
-            this.btnDownload.TabIndex = 7;
-            this.btnDownload.Text = "🌐  DOWNLOAD FROM MY API";
-            this.btnDownload.UseVisualStyleBackColor = false;
             // 
             // btnOpenFolder
             // 
@@ -148,12 +123,54 @@ namespace RetroLauncher
             this.btnOpenFolder.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnOpenFolder.Font = new System.Drawing.Font("Segoe UI Semibold", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
             this.btnOpenFolder.ForeColor = System.Drawing.Color.White;
-            this.btnOpenFolder.Location = new System.Drawing.Point(260, 235);
+            this.btnOpenFolder.Location = new System.Drawing.Point(500, 130);
             this.btnOpenFolder.Name = "btnOpenFolder";
-            this.btnOpenFolder.Size = new System.Drawing.Size(460, 35);
-            this.btnOpenFolder.TabIndex = 8;
-            this.btnOpenFolder.Text = "📂  Open BIOS Folder in Explorer";
+            this.btnOpenFolder.Size = new System.Drawing.Size(220, 35);
+            this.btnOpenFolder.TabIndex = 6;
+            this.btnOpenFolder.Text = "📂  Open BIOS Folder";
             this.btnOpenFolder.UseVisualStyleBackColor = false;
+            // 
+            // btnVerify
+            // 
+            this.btnVerify.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(44)))), ((int)(((byte)(44)))), ((int)(((byte)(52)))));
+            this.btnVerify.FlatAppearance.BorderSize = 0;
+            this.btnVerify.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnVerify.Font = new System.Drawing.Font("Segoe UI Semibold", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
+            this.btnVerify.ForeColor = System.Drawing.Color.White;
+            this.btnVerify.Location = new System.Drawing.Point(260, 180);
+            this.btnVerify.Name = "btnVerify";
+            this.btnVerify.Size = new System.Drawing.Size(220, 35);
+            this.btnVerify.TabIndex = 7;
+            this.btnVerify.Text = "🔍  Refresh BIOS";
+            this.btnVerify.UseVisualStyleBackColor = false;
+            // 
+            // btnRemove
+            // 
+            this.btnRemove.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(44)))), ((int)(((byte)(44)))), ((int)(((byte)(52)))));
+            this.btnRemove.FlatAppearance.BorderSize = 0;
+            this.btnRemove.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnRemove.Font = new System.Drawing.Font("Segoe UI Semibold", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
+            this.btnRemove.ForeColor = System.Drawing.Color.White;
+            this.btnRemove.Location = new System.Drawing.Point(500, 180);
+            this.btnRemove.Name = "btnRemove";
+            this.btnRemove.Size = new System.Drawing.Size(220, 35);
+            this.btnRemove.TabIndex = 8;
+            this.btnRemove.Text = "❌  Remove";
+            this.btnRemove.UseVisualStyleBackColor = false;
+            // 
+            // btnSync
+            // 
+            this.btnSync.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(99)))), ((int)(((byte)(102)))), ((int)(((byte)(241)))));
+            this.btnSync.FlatAppearance.BorderSize = 0;
+            this.btnSync.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnSync.Font = new System.Drawing.Font("Segoe UI Black", 9.5F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
+            this.btnSync.ForeColor = System.Drawing.Color.White;
+            this.btnSync.Location = new System.Drawing.Point(260, 230);
+            this.btnSync.Name = "btnSync";
+            this.btnSync.Size = new System.Drawing.Size(460, 40);
+            this.btnSync.TabIndex = 12;
+            this.btnSync.Text = "🔄  Sync to Emulator";
+            this.btnSync.UseVisualStyleBackColor = false;
             // 
             // btnClose
             // 
@@ -197,10 +214,11 @@ namespace RetroLauncher
             this.Controls.Add(this.lblStatusVal);
             this.Controls.Add(this.lblPathHeader);
             this.Controls.Add(this.tbPath);
-            this.Controls.Add(this.btnLocate);
+            this.Controls.Add(this.btnVerify);
             this.Controls.Add(this.btnImport);
-            this.Controls.Add(this.btnDownload);
+            this.Controls.Add(this.btnSync);
             this.Controls.Add(this.btnOpenFolder);
+            this.Controls.Add(this.btnRemove);
             this.Controls.Add(this.btnClose);
             this.Controls.Add(this.pbProgress);
             this.Controls.Add(this.lblDownloadStatus);

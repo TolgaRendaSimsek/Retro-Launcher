@@ -13,7 +13,11 @@ namespace RetroLauncher
         {
             "Sony PlayStation 1",
             "Sony PlayStation 2",
-            "Sony PlayStation 3"
+            "Sony PlayStation 3",
+            "Sony PlayStation Portable",
+            "Nintendo GameCube",
+            "Nintendo Wii",
+            "RetroArch"
         };
 
         public BiosManagerForm()
@@ -27,17 +31,19 @@ namespace RetroLauncher
             this.Load += BiosManagerForm_Load;
             lbConsoles.SelectedIndexChanged += lbConsoles_SelectedIndexChanged;
 
-            btnLocate.Click += btnLocate_Click;
             btnImport.Click += btnImport_Click;
-            btnDownload.Click += btnDownload_Click;
             btnOpenFolder.Click += btnOpenFolder_Click;
+            btnVerify.Click += btnVerify_Click;
+            btnRemove.Click += btnRemove_Click;
+            btnSync.Click += btnSync_Click;
             btnClose.Click += btnClose_Click;
 
             // Hover effects
-            SetupHover(btnLocate, Color.FromArgb(44, 44, 52), Color.FromArgb(55, 55, 65));
             SetupHover(btnImport, Color.FromArgb(44, 44, 52), Color.FromArgb(55, 55, 65));
-            SetupHover(btnDownload, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
             SetupHover(btnOpenFolder, Color.FromArgb(44, 44, 52), Color.FromArgb(55, 55, 65));
+            SetupHover(btnVerify, Color.FromArgb(44, 44, 52), Color.FromArgb(55, 55, 65));
+            SetupHover(btnRemove, Color.FromArgb(44, 44, 52), Color.FromArgb(55, 55, 65));
+            SetupHover(btnSync, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
             SetupHover(btnClose, Color.FromArgb(239, 68, 68), Color.FromArgb(220, 38, 38));
         }
 
@@ -91,7 +97,7 @@ namespace RetroLauncher
             {
                 if (item.Status == "Ready")
                 {
-                    lblStatusVal.Text = "READY";
+                    lblStatusVal.Text = $"READY ({item.FileName})";
                     lblStatusVal.ForeColor = Color.FromArgb(16, 185, 129); // Green
                     tbPath.Text = item.Path;
                 }
@@ -100,28 +106,6 @@ namespace RetroLauncher
                     lblStatusVal.Text = "MISSING";
                     lblStatusVal.ForeColor = Color.FromArgb(239, 68, 68); // Red
                     tbPath.Text = "";
-                }
-            }
-        }
-
-        private void btnLocate_Click(object? sender, EventArgs e)
-        {
-            string? console = lbConsoles.SelectedItem?.ToString();
-            if (string.IsNullOrEmpty(console)) return;
-
-            using (var fd = new OpenFileDialog())
-            {
-                fd.Title = $"Locate BIOS for {console}";
-                fd.Filter = GetFileDialogFilter(console);
-
-                if (fd.ShowDialog(this) == DialogResult.OK)
-                {
-                    bool result = BiosManager.Instance.LocateBiosManually(console, fd.FileName);
-                    if (result)
-                    {
-                        lbConsoles_SelectedIndexChanged(null, EventArgs.Empty);
-                        MessageBox.Show($"BIOS file path mapped successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
                 }
             }
         }
@@ -142,7 +126,7 @@ namespace RetroLauncher
                     if (result)
                     {
                         lbConsoles_SelectedIndexChanged(null, EventArgs.Empty);
-                        MessageBox.Show($"BIOS file imported successfully into emulator folder!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show($"BIOS file imported successfully into centralized BIOS folder!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     else
                     {
@@ -152,59 +136,66 @@ namespace RetroLauncher
             }
         }
 
-        private async void btnDownload_Click(object? sender, EventArgs e)
+        private void btnVerify_Click(object? sender, EventArgs e)
         {
             string? console = lbConsoles.SelectedItem?.ToString();
             if (string.IsNullOrEmpty(console)) return;
 
-            // Legal Warning
-            string warningMsg = "LEGAL WARNING:\n\nDownloading emulator BIOS/firmware files is only permitted if you legally own the console hardware and/or own the original system files.\n\nBy continuing, you agree that you are downloading legally authorized files for personal backup use only.\n\nDo you wish to proceed with the download?";
-            var confirm = MessageBox.Show(warningMsg, "Legal Compliance Check", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            if (confirm != DialogResult.Yes)
+            BiosManager.Instance.DetectBiosStatus();
+            lbConsoles_SelectedIndexChanged(null, EventArgs.Empty);
+
+            var item = BiosManager.Instance.BiosItems.FirstOrDefault(b => string.Equals(b.Console, console, StringComparison.OrdinalIgnoreCase));
+            if (item != null && item.Status == "Ready")
             {
+                MessageBox.Show($"Verification successful! BIOS is ready in centralized directory.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                MessageBox.Show($"BIOS file not detected in centralized folder.", "Verification Failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void btnRemove_Click(object? sender, EventArgs e)
+        {
+            string? console = lbConsoles.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(console)) return;
+
+            var confirm = MessageBox.Show($"Are you sure you want to delete the BIOS files for {console} from the centralized folder?", "Confirm Deletion", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (confirm == DialogResult.Yes)
+            {
+                bool result = BiosManager.Instance.RemoveBiosFile(console);
+                if (result)
+                {
+                    lbConsoles_SelectedIndexChanged(null, EventArgs.Empty);
+                    MessageBox.Show("BIOS files removed successfully from centralized folder.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Failed to remove BIOS files.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void btnSync_Click(object? sender, EventArgs e)
+        {
+            string? console = lbConsoles.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(console)) return;
+
+            var item = BiosManager.Instance.BiosItems.FirstOrDefault(b => string.Equals(b.Console, console, StringComparison.OrdinalIgnoreCase));
+            if (item == null || item.Status != "Ready")
+            {
+                MessageBox.Show("BIOS must be imported and verified before syncing.", "Sync Failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            string apiEndpoint = "http://localhost:5000/api/bios/latest";
-
-            // Disable controls
-            ToggleDetailsControls(false);
-            lbConsoles.Enabled = false;
-            btnClose.Enabled = false;
-
-            pbProgress.Value = 0;
-            pbProgress.Visible = true;
-            lblDownloadStatus.Text = "Connecting to API for BIOS info...";
-
-            try
+            bool result = BiosManager.Instance.SyncBiosToEmulator(item);
+            if (result)
             {
-                bool result = await BiosManager.Instance.DownloadBiosFromApiAsync(console, apiEndpoint, (progress) =>
-                {
-                    this.BeginInvoke(new Action(() =>
-                    {
-                        pbProgress.Value = Math.Min(100, Math.Max(0, progress));
-                        lblDownloadStatus.Text = $"Downloading package... {progress}%";
-                    }));
-                });
-
-                if (result)
-                {
-                    lblDownloadStatus.Text = "BIOS downloaded and installed!";
-                    MessageBox.Show($"Successfully downloaded and registered BIOS/firmware for {console}!", "Download Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    lbConsoles_SelectedIndexChanged(null, EventArgs.Empty);
-                }
+                MessageBox.Show($"BIOS files successfully synchronized to the expected emulator folder!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            catch (Exception ex)
+            else
             {
-                lblDownloadStatus.Text = "Download failed.";
-                MessageBox.Show($"Failed to download BIOS from API:\n{ex.Message}", "API Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            finally
-            {
-                ToggleDetailsControls(true);
-                lbConsoles.Enabled = true;
-                btnClose.Enabled = true;
-                pbProgress.Visible = false;
+                MessageBox.Show("Failed to synchronize BIOS files to the emulator expected folder.", "Sync Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -213,15 +204,9 @@ namespace RetroLauncher
             string? console = lbConsoles.SelectedItem?.ToString();
             if (string.IsNullOrEmpty(console)) return;
 
-            string folderName = console switch
-            {
-                "Sony PlayStation 1" => "Emulators/PS1/bios",
-                "Sony PlayStation 2" => "Emulators/PS2/bios",
-                "Sony PlayStation 3" => "Emulators/PS3/dev_flash",
-                _ => "Emulators/Common/bios"
-            };
+            string folderName = BiosManager.Instance.GetDefaultFolderForConsole(console);
+            string resolved = Path.Combine(AppContext.BaseDirectory, folderName);
 
-            string resolved = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, folderName);
             if (!Directory.Exists(resolved))
             {
                 try { Directory.CreateDirectory(resolved); } catch { }
@@ -245,10 +230,11 @@ namespace RetroLauncher
 
         private void ToggleDetailsControls(bool enabled)
         {
-            btnLocate.Enabled = enabled;
             btnImport.Enabled = enabled;
-            btnDownload.Enabled = enabled;
             btnOpenFolder.Enabled = enabled;
+            btnVerify.Enabled = enabled;
+            btnRemove.Enabled = enabled;
+            btnSync.Enabled = enabled;
         }
 
         private string GetFileDialogFilter(string console)
@@ -256,6 +242,7 @@ namespace RetroLauncher
             return console switch
             {
                 "Sony PlayStation 3" => "PS3 Firmware Update (*.pup)|*.pup|All files (*.*)|*.*",
+                "Sony PlayStation Portable" => "PSP System Files (*.prx;*.bin)|*.prx;*.bin|All files (*.*)|*.*",
                 _ => "BIOS files (*.bin;*.rom;*.img)|*.bin;*.rom;*.img|All files (*.*)|*.*"
             };
         }

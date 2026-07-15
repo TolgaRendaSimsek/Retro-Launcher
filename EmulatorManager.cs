@@ -47,7 +47,7 @@ namespace RetroLauncher
 
     public class EmulatorManager
     {
-        private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "emulators.json");
+        private static readonly string ConfigPath = Path.Combine(AppContext.BaseDirectory, "emulators.json");
         private static EmulatorManager? _instance;
         public static EmulatorManager Instance => _instance ??= new EmulatorManager();
 
@@ -79,21 +79,65 @@ namespace RetroLauncher
             if (emu == null || string.IsNullOrWhiteSpace(emu.Path)) return false;
 
             string resolved = ResolvePath(emu.Path);
-            if (!File.Exists(resolved)) return false;
+            bool primaryValid = false;
 
-            try
+            if (File.Exists(resolved))
             {
-                var fileInfo = new FileInfo(resolved);
-                if (fileInfo.Length == 0) return false;
+                try
+                {
+                    var fileInfo = new FileInfo(resolved);
+                    if (fileInfo.Length > 0)
+                    {
+                        FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(resolved);
+                        primaryValid = true;
+                    }
+                }
+                catch { }
+            }
 
-                // Basic execution/read validation
-                FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(resolved);
-                return true;
-            }
-            catch
+            if (primaryValid) return true;
+
+            // Fallback recursive search if not found or invalid
+            string? searchFolder = null;
+            if (!string.IsNullOrEmpty(emu.InstallFolder))
             {
-                return false;
+                searchFolder = ResolvePath(emu.InstallFolder);
             }
+            else if (!string.IsNullOrEmpty(emu.Path))
+            {
+                searchFolder = Path.GetDirectoryName(ResolvePath(emu.Path));
+            }
+
+            if (searchFolder != null && Directory.Exists(searchFolder))
+            {
+                string? foundExe = null;
+                if (string.Equals(emulatorId, "duckstation", StringComparison.OrdinalIgnoreCase))
+                {
+                    foundExe = FindDuckStationExecutable(searchFolder);
+                }
+                else
+                {
+                    foundExe = FindExecutableInFolder(searchFolder);
+                }
+
+                if (foundExe != null && File.Exists(foundExe))
+                {
+                    try
+                    {
+                        var fileInfo = new FileInfo(foundExe);
+                        if (fileInfo.Length > 0)
+                        {
+                            FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(foundExe);
+                            emu.Path = MakeRelativePath(foundExe);
+                            SaveEmulators();
+                            return true;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            return false;
         }
 
         public async Task<bool> CheckForUpdates(string emulatorId)
@@ -131,7 +175,7 @@ namespace RetroLauncher
                 string downloadUrl = info.Value.DownloadUrl;
                 string tagName = info.Value.TagName;
 
-                string tempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp");
+                string tempDir = Path.Combine(AppContext.BaseDirectory, "temp");
                 if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
 
                 string archiveName = Path.GetFileName(new Uri(downloadUrl).AbsolutePath);
@@ -173,7 +217,7 @@ namespace RetroLauncher
                 progress?.Report(90);
 
                 // Extract
-                string destDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", emu.Name);
+                string destDir = Path.Combine(AppContext.BaseDirectory, "Emulators", emu.Name);
                 if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
 
                 bool extracted = false;
@@ -269,11 +313,99 @@ namespace RetroLauncher
             return result;
         }
 
-        private EmulatorItem? FindEmulator(string emulatorId)
+        public EmulatorItem? FindEmulator(string emulatorId)
         {
             return Config.Emulators.FirstOrDefault(e => 
                 string.Equals(e.Id, emulatorId, StringComparison.OrdinalIgnoreCase) || 
                 string.Equals(e.Name, emulatorId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public static string? FindDuckStationExecutable(string folder)
+        {
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return null;
+            try
+            {
+                var files = Directory.GetFiles(folder, "*.exe", SearchOption.AllDirectories);
+                foreach (var file in files)
+                {
+                    string name = Path.GetFileName(file);
+                    if (name.Contains("duckstation", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return file;
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        public string ResolveAndRegisterEmulatorId(string exePath, string platform)
+        {
+            if (string.IsNullOrEmpty(exePath)) return "";
+
+            string normalizedPath = exePath.Replace('\\', '/').ToLower();
+            string fileName = Path.GetFileName(normalizedPath);
+
+            // 1. Check if path contains duckstation
+            if (normalizedPath.Contains("duckstation") || fileName.Contains("duckstation"))
+            {
+                var duck = Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, "duckstation", StringComparison.OrdinalIgnoreCase));
+                if (duck != null)
+                {
+                    duck.Path = exePath;
+                    SaveEmulators();
+                }
+                return "duckstation";
+            }
+
+            // 2. Check if path contains pcsx2
+            if (normalizedPath.Contains("pcsx2") || fileName.Contains("pcsx2"))
+            {
+                var pcsx = Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, "pcsx2", StringComparison.OrdinalIgnoreCase));
+                if (pcsx != null)
+                {
+                    pcsx.Path = exePath;
+                    SaveEmulators();
+                }
+                return "pcsx2";
+            }
+
+            // 3. Check if path contains rpcs3
+            if (normalizedPath.Contains("rpcs3") || fileName.Contains("rpcs3"))
+            {
+                var rpcs = Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, "rpcs3", StringComparison.OrdinalIgnoreCase));
+                if (rpcs != null)
+                {
+                    rpcs.Path = exePath;
+                    SaveEmulators();
+                }
+                return "rpcs3";
+            }
+
+            // 4. Match exact path
+            var matchedEmu = Config.Emulators.FirstOrDefault(e => string.Equals(e.Path, exePath, StringComparison.OrdinalIgnoreCase));
+            if (matchedEmu != null)
+            {
+                return matchedEmu.Id;
+            }
+
+            // 5. Register new custom emulator
+            string name = Path.GetFileNameWithoutExtension(exePath);
+            string id = name.ToLower().Replace(" ", "_");
+            if (!Config.Emulators.Any(e => string.Equals(e.Id, id, StringComparison.OrdinalIgnoreCase)))
+            {
+                var newEmu = new EmulatorItem
+                {
+                    Id = id,
+                    Name = name,
+                    Path = exePath,
+                    SupportedPlatforms = new List<string> { platform },
+                    Status = "Installed"
+                };
+                Config.Emulators.Add(newEmu);
+                SaveEmulators();
+            }
+            return id;
         }
 
         // Backward compatibility static methods
@@ -388,12 +520,12 @@ namespace RetroLauncher
         {
             if (string.IsNullOrEmpty(path)) return "";
             if (Path.IsPathRooted(path)) return path;
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, path));
+            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
         }
 
         private string MakeRelativePath(string fullPath)
         {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string baseDir = AppContext.BaseDirectory;
             if (fullPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
             {
                 return fullPath.Substring(baseDir.Length).TrimStart(Path.DirectorySeparatorChar);

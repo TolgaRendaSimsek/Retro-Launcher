@@ -1,0 +1,2 @@
+Place your PlayStation 2 BIOS files (e.g., scph39001.bin) here.
+RetroLauncher will scan this folder and automatically sync the files to PCSX2.

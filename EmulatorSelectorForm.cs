@@ -79,7 +79,7 @@ namespace RetroLauncher
             }
 
             // 2. Scan Emulators directory recursively for .exe files
-            string emuFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators");
+            string emuFolder = Path.Combine(AppContext.BaseDirectory, "Emulators");
             if (!Directory.Exists(emuFolder))
             {
                 emuFolder = Path.Combine(Directory.GetCurrentDirectory(), "Emulators");
@@ -172,7 +172,7 @@ namespace RetroLauncher
             if (string.IsNullOrEmpty(path)) return "";
             if (Path.IsPathRooted(path)) return path;
 
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string baseDir = AppContext.BaseDirectory;
             string testPath1 = Path.Combine(baseDir, path);
             if (File.Exists(testPath1) || Directory.Exists(testPath1)) return testPath1;
 
@@ -183,7 +183,7 @@ namespace RetroLauncher
         {
             if (string.IsNullOrEmpty(fullPath)) return "";
 
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string baseDir = AppContext.BaseDirectory;
             string workingDir = Directory.GetCurrentDirectory();
 
             if (fullPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))

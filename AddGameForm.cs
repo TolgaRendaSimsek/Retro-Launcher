@@ -96,7 +96,8 @@ namespace RetroLauncher
                     cbConsole.SelectedIndex = index;
                 }
                 
-                tbEmulator.Text = _gameToEdit.EmulatorId;
+                var registeredEmu = EmulatorManager.Instance.FindEmulator(_gameToEdit.EmulatorId);
+                tbEmulator.Text = registeredEmu != null ? registeredEmu.Path : _gameToEdit.EmulatorId;
                 tbRom.Text = _gameToEdit.RomPath;
                 tbCover.Text = _gameToEdit.CoverImagePath;
                 tbHero.Text = _gameToEdit.HeroImagePath;
@@ -253,6 +254,7 @@ namespace RetroLauncher
 
             string selectedConsole = cbConsole.SelectedItem?.ToString() ?? "";
             string emulatorPath = tbEmulator.Text.Trim();
+            string logicalEmulatorId = EmulatorManager.Instance.ResolveAndRegisterEmulatorId(emulatorPath, selectedConsole);
 
             // Run GDI+ / File Path Compatibility warnings
             if (!string.IsNullOrEmpty(selectedConsole) && !string.IsNullOrEmpty(emulatorPath))
@@ -288,7 +290,7 @@ namespace RetroLauncher
             {
                 _gameToEdit.Title = name;
                 _gameToEdit.Platform = selectedConsole;
-                _gameToEdit.EmulatorId = emulatorPath;
+                _gameToEdit.EmulatorId = logicalEmulatorId;
                 _gameToEdit.RomPath = tbRom.Text.Trim();
                 _gameToEdit.CoverImagePath = finalCover;
                 _gameToEdit.HeroImagePath = finalHero;
@@ -305,7 +307,7 @@ namespace RetroLauncher
                     Id = gameId,
                     Title = name,
                     Platform = selectedConsole,
-                    EmulatorId = emulatorPath,
+                    EmulatorId = logicalEmulatorId,
                     RomPath = tbRom.Text.Trim(),
                     CoverImagePath = finalCover,
                     HeroImagePath = finalHero,
@@ -480,7 +482,7 @@ namespace RetroLauncher
             if (string.IsNullOrEmpty(path)) return "";
             if (Path.IsPathRooted(path)) return path;
 
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string baseDir = AppContext.BaseDirectory;
             string testPath1 = Path.Combine(baseDir, path);
             if (Directory.Exists(testPath1) || File.Exists(testPath1)) return testPath1;
 
@@ -494,7 +496,7 @@ namespace RetroLauncher
         {
             if (string.IsNullOrEmpty(fullPath)) return "";
 
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string baseDir = AppContext.BaseDirectory;
             string workingDir = Directory.GetCurrentDirectory();
 
             if (fullPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))

@@ -10,6 +10,11 @@ namespace RetroLauncher
     {
         public Dictionary<string, string> DefaultEmulators { get; set; } = new();
         public bool IsFirstRun { get; set; } = true;
+        public int WindowWidth { get; set; } = 1100;
+        public int WindowHeight { get; set; } = 650;
+        public int WindowLeft { get; set; } = -1;
+        public int WindowTop { get; set; } = -1;
+        public bool IsMaximized { get; set; } = false;
     }
 
     public static class SettingsManager

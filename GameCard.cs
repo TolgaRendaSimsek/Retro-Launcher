@@ -35,6 +35,42 @@ namespace RetroLauncher
             Game = game;
             InitializeComponent();
             SetupCard();
+            SetupLayout();
+        }
+
+        private void SetupLayout()
+        {
+            this.Controls.Clear();
+            TableLayoutPanel tlp = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = Color.Transparent
+            };
+            tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlp.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tlp.RowStyles.Add(new RowStyle(SizeType.Absolute, 25F));
+            tlp.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
+
+            pbCover.Dock = DockStyle.Fill;
+            pbCover.Margin = new Padding(4);
+
+            lblTitle.Dock = DockStyle.Fill;
+            lblTitle.Margin = new Padding(4, 0, 4, 0);
+            lblTitle.TextAlign = ContentAlignment.MiddleCenter;
+
+            lblConsole.Dock = DockStyle.Fill;
+            lblConsole.Margin = new Padding(4, 0, 4, 4);
+            lblConsole.TextAlign = ContentAlignment.MiddleCenter;
+
+            tlp.Controls.Add(pbCover, 0, 0);
+            tlp.Controls.Add(lblTitle, 0, 1);
+            tlp.Controls.Add(lblConsole, 0, 2);
+
+            this.Controls.Add(tlp);
         }
 
         private void SetupCard()

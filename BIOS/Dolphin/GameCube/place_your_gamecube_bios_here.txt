@@ -1,0 +1,2 @@
+Place your Nintendo GameCube BIOS files (e.g., ipl_usa.bin) here.
+RetroLauncher will scan this folder and automatically sync the files to Dolphin.

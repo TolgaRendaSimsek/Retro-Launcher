@@ -11,6 +11,8 @@ namespace RetroLauncher
         public string FileName { get; set; } = "";
         public string Sha256 { get; set; } = "";
         public string InstalledVersion { get; set; } = "";
+        public string Emulator { get; set; } = "";
+        public string Platform { get; set; } = "";
 
         // camelCase aliases for JSON serialization compatibility
         public string console { get => Console; set => Console = value; }
@@ -19,6 +21,8 @@ namespace RetroLauncher
         public string fileName { get => FileName; set => FileName = value; }
         public string sha256 { get => Sha256; set => Sha256 = value; }
         public string installedVersion { get => InstalledVersion; set => InstalledVersion = value; }
+        public string emulator { get => Emulator; set => Emulator = value; }
+        public string platform { get => Platform; set => Platform = value; }
     }
 
     public class BiosConfig

@@ -24,13 +24,33 @@ namespace RetroLauncher
         {
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emu == null || string.IsNullOrEmpty(emu.ExecutablePath)) return "";
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, emu.ExecutablePath));
+            string fullPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.ExecutablePath));
+
+            // Create portable.txt beside the executable path to force DuckStation portable mode
+            if (File.Exists(fullPath))
+            {
+                try
+                {
+                    string dir = Path.GetDirectoryName(fullPath) ?? "";
+                    if (!string.IsNullOrEmpty(dir))
+                    {
+                        string portableFile = Path.Combine(dir, "portable.txt");
+                        if (!File.Exists(portableFile))
+                        {
+                            File.WriteAllText(portableFile, "");
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return fullPath;
         }
 
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
             string exePath = GetExecutablePath();
-            string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
+            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             string defaultArgs = emu?.DefaultLaunchArguments ?? "-fullscreen";
             if (!defaultArgs.Contains("-nogui"))
@@ -67,10 +87,9 @@ namespace RetroLauncher
 
         public bool ValidateGame(Game game)
         {
-            string exePath = GetExecutablePath();
-            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
+            if (!EmulatorManager.Instance.VerifyExecutable(EmulatorId)) return false;
 
-            string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
+            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
             if (string.IsNullOrEmpty(game.RomPath) || (!File.Exists(romPath) && !Directory.Exists(romPath))) return false;
 
             return true;
@@ -83,7 +102,7 @@ namespace RetroLauncher
 
         public string GetScreenshotFolder(Game game)
         {
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", "PS1", "screenshots"));
+            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Emulators", "PS1", "screenshots"));
         }
     }
 }
