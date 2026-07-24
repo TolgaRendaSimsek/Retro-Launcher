@@ -32,18 +32,28 @@ namespace RetroLauncher
             string exePath = GetExecutablePath();
             string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
+            
+            var psi = new ProcessStartInfo
+            {
+                FileName = exePath,
+                UseShellExecute = false
+            };
+
             string defaultArgs = emu?.DefaultLaunchArguments ?? "-fullscreen";
             if (!defaultArgs.Contains("-nogui"))
             {
                 defaultArgs += " -nogui";
             }
 
-            return new ProcessStartInfo
+            var parts = defaultArgs.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
             {
-                FileName = exePath,
-                Arguments = $"{defaultArgs} \"{romPath}\"",
-                UseShellExecute = true
-            };
+                psi.ArgumentList.Add(part);
+            }
+
+            psi.ArgumentList.Add(romPath);
+
+            return psi;
         }
 
         public async Task<Process> LaunchGameAsync(Game game)

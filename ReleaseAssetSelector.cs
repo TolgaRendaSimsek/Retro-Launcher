@@ -1,0 +1,328 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+
+namespace RetroLauncher
+{
+    public enum SelectionConfidence
+    {
+        High,
+        Medium,
+        Low,
+        Ambiguous,
+        None
+    }
+
+    public class CandidateScore
+    {
+        public string Name { get; set; } = "";
+        public int Score { get; set; }
+        public string Explanation { get; set; } = "";
+    }
+
+    public class CandidateRejection
+    {
+        public string Name { get; set; } = "";
+        public string Reason { get; set; } = "";
+    }
+
+    public class ReleaseSelectionResult
+    {
+        public bool Success { get; set; }
+        public ReleaseInfo? SelectedRelease { get; set; }
+        public SelectionConfidence Confidence { get; set; } = SelectionConfidence.None;
+        public string Message { get; set; } = "";
+    }
+
+    public class ReleaseAssetSelectionResult
+    {
+        public bool Success { get; set; }
+        public ReleaseAssetInfo? SelectedAsset { get; set; }
+        public SelectionConfidence Confidence { get; set; } = SelectionConfidence.None;
+        public string Message { get; set; } = "";
+        public List<CandidateScore> Scores { get; set; } = new();
+        public List<CandidateRejection> Rejections { get; set; } = new();
+    }
+
+    public interface IReleaseSelector
+    {
+        ReleaseSelectionResult SelectRelease(EmulatorDefinition definition, IEnumerable<ReleaseInfo> releases);
+    }
+
+    public interface IReleaseAssetSelectorNew
+    {
+        ReleaseAssetSelectionResult SelectAsset(EmulatorDefinition definition, ReleaseInfo release);
+    }
+
+    public class ReleaseSelector : IReleaseSelector
+    {
+        public ReleaseSelectionResult SelectRelease(EmulatorDefinition definition, IEnumerable<ReleaseInfo> releases)
+        {
+            var result = new ReleaseSelectionResult();
+
+            if (releases == null || !releases.Any())
+            {
+                result.Success = false;
+                result.Message = "No releases available to select.";
+                return result;
+            }
+
+            var candidates = new List<ReleaseInfo>();
+            foreach (var release in releases)
+            {
+                if (release.IsDraft) continue;
+
+                // Channel filtering
+                if (definition.ReleaseChannel == EmulatorReleaseChannel.Stable && release.IsPrerelease)
+                {
+                    continue;
+                }
+
+                candidates.Add(release);
+            }
+
+            if (!candidates.Any())
+            {
+                result.Success = false;
+                result.Message = "No compatible release found for the configured channel.";
+                return result;
+            }
+
+            var chosen = candidates.OrderByDescending(r => r.PublishedAt ?? DateTime.MinValue).First();
+
+            result.Success = true;
+            result.SelectedRelease = chosen;
+            result.Confidence = SelectionConfidence.High;
+            result.Message = $"Selected release '{chosen.Tag}' published at '{chosen.PublishedAt}'.";
+            return result;
+        }
+    }
+
+    public class ReleaseAssetSelector : IReleaseAssetSelector, IReleaseAssetSelectorNew
+    {
+        public ReleaseAssetSelectionResult SelectAsset(EmulatorDefinition definition, ReleaseInfo release)
+        {
+            var result = new ReleaseAssetSelectionResult();
+
+            if (release == null || release.Assets == null || !release.Assets.Any())
+            {
+                result.Success = false;
+                result.Message = "The release does not contain any assets.";
+                return result;
+            }
+
+            var systemArch = RuntimeInformation.ProcessArchitecture;
+            bool is64Bit = systemArch == Architecture.X64 || systemArch == Architecture.Arm64;
+            var candidates = new List<(ReleaseAssetInfo Asset, int Score)>();
+
+            foreach (var asset in release.Assets)
+            {
+                string nameLower = asset.Name.ToLower();
+
+                // 1. Exclude non-Windows platform artifacts
+                if (nameLower.Contains("linux") || nameLower.Contains("ubuntu") || nameLower.Contains("macos") ||
+                    nameLower.Contains("osx") || nameLower.Contains("android") || nameLower.EndsWith(".apk") ||
+                    nameLower.EndsWith(".appimage") || nameLower.EndsWith(".dmg") || nameLower.EndsWith(".pkg") ||
+                    nameLower.EndsWith(".deb"))
+                {
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "targets non-Windows platform" });
+                    continue;
+                }
+
+                // 2. Incompatible architecture check (prefer x64 on x64 systems, reject ARM/ARM64 on X64)
+                if (is64Bit && (nameLower.Contains("arm") || nameLower.Contains("arm64") || nameLower.Contains("aarch64")))
+                {
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "incompatible architecture (ARM/ARM64)" });
+                    continue;
+                }
+
+                // 3. Exclude non-target file types (debug symbols, source code, checksums, signatures)
+                if (nameLower.Contains("debug") || nameLower.Contains("symbols") || nameLower.Contains("pdb") ||
+                    nameLower.Contains("dsym") || nameLower.Contains("dbg") || nameLower.EndsWith(".pdb") ||
+                    nameLower.Contains("deps") || nameLower.Contains("dependencies") ||
+                    nameLower.EndsWith(".sha256") || nameLower.EndsWith(".sha256sum") || nameLower.EndsWith(".md5") ||
+                    nameLower.EndsWith(".sha1") || nameLower.EndsWith(".sha512") ||
+                    nameLower.EndsWith(".asc") || nameLower.EndsWith(".sig") || nameLower.EndsWith(".pgp") || nameLower.EndsWith(".gpg") ||
+                    nameLower.Contains("source") || nameLower.Contains("-src") || nameLower.Contains(".src."))
+                {
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "excluded file type (symbols/source/checksum/sig)" });
+                    continue;
+                }
+
+                // 4. Validate HTTPS download URLs and allowed hosts
+                if (!Uri.TryCreate(asset.DownloadUrl, UriKind.Absolute, out var uri))
+                {
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "invalid absolute download URL" });
+                    continue;
+                }
+
+                if (uri.Scheme != Uri.UriSchemeHttps)
+                {
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "insecure URL protocol (HTTPS required)" });
+                    continue;
+                }
+
+                if (!AllowedDownloadHostPolicy.IsHostAllowed(asset.DownloadUrl))
+                {
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "disallowed host domain" });
+                    continue;
+                }
+
+                // 5. Verify file extension matches content-type
+                string ext = Path.GetExtension(asset.Name).ToLower();
+                if (ext != ".zip" && ext != ".7z")
+                {
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "unsupported archive format (only ZIP/7Z allowed)" });
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(asset.ContentType))
+                {
+                    string ct = asset.ContentType.ToLower();
+                    if (ext == ".zip" && !ct.Contains("zip") && !ct.Contains("octet-stream"))
+                    {
+                        RetroLogger.Log($"Warning: ZIP asset '{asset.Name}' has mismatching content-type '{asset.ContentType}'", "WARNING");
+                    }
+                    else if (ext == ".7z" && !ct.Contains("7z") && !ct.Contains("x-7z-compressed") && !ct.Contains("octet-stream"))
+                    {
+                        RetroLogger.Log($"Warning: 7Z asset '{asset.Name}' has mismatching content-type '{asset.ContentType}'", "WARNING");
+                    }
+                }
+
+                // Calculate Score
+                int score = 0;
+                
+                // Match definition inclusion patterns
+                bool matchesInclude = false;
+                if (definition.AssetSelectionRules != null && definition.AssetSelectionRules.Any())
+                {
+                    foreach (var pattern in definition.AssetSelectionRules)
+                    {
+                        if (MatchesPattern(asset.Name, pattern))
+                        {
+                            matchesInclude = true;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    matchesInclude = nameLower.Contains("win") || nameLower.Contains("x64") || nameLower.Contains("windows");
+                }
+
+                if (matchesInclude) score += 100;
+                if (ext == ".zip" || ext == ".7z") score += 50;
+                if (nameLower.Contains("win64") || nameLower.Contains("x64") || nameLower.Contains("x86-64")) score += 20;
+
+                result.Scores.Add(new CandidateScore { Name = asset.Name, Score = score });
+                candidates.Add((asset, score));
+            }
+
+            if (!candidates.Any())
+            {
+                result.Success = false;
+                result.Message = "No compatible Windows package was found after filtering assets.";
+                return result;
+            }
+
+            int maxScore = candidates.Max(c => c.Score);
+            var bestCandidates = candidates.Where(c => c.Score == maxScore).ToList();
+
+            if (bestCandidates.Count > 1)
+            {
+                result.Success = false;
+                result.Confidence = SelectionConfidence.Ambiguous;
+                result.Message = $"Found {bestCandidates.Count} ambiguous packages with matching high scores.";
+                return result;
+            }
+
+            var chosen = bestCandidates.First().Asset;
+            result.Success = true;
+            result.SelectedAsset = chosen;
+            result.Confidence = SelectionConfidence.High;
+            result.Message = $"Selected asset '{chosen.Name}' with score {maxScore}.";
+            return result;
+        }
+
+        public AssetSelectionResult SelectAsset(EmulatorDefinition definition, IEnumerable<GitHubRelease> releases)
+        {
+            var releaseList = releases.Select(ConvertToReleaseInfo).ToList();
+            var releaseSelector = new ReleaseSelector();
+            var releaseSel = releaseSelector.SelectRelease(definition, releaseList);
+
+            if (!releaseSel.Success || releaseSel.SelectedRelease == null)
+            {
+                return new AssetSelectionResult
+                {
+                    Status = SelectionStatus.NoCompatiblePackage,
+                    UserMessage = releaseSel.Message
+                };
+            }
+
+            var assetSel = SelectAsset(definition, releaseSel.SelectedRelease);
+            var oldResult = new AssetSelectionResult
+            {
+                Status = assetSel.Success ? SelectionStatus.Success : SelectionStatus.NoCompatiblePackage,
+                SelectedReleaseTag = releaseSel.SelectedRelease.Tag,
+                UserMessage = assetSel.Message
+            };
+
+            if (assetSel.SelectedAsset != null)
+            {
+                oldResult.SelectedAsset = new GitHubReleaseAsset
+                {
+                    Name = assetSel.SelectedAsset.Name,
+                    BrowserDownloadUrl = assetSel.SelectedAsset.DownloadUrl,
+                    Size = assetSel.SelectedAsset.Size,
+                    ContentType = assetSel.SelectedAsset.ContentType
+                };
+            }
+
+            if (assetSel.Confidence == SelectionConfidence.Ambiguous)
+            {
+                oldResult.Status = SelectionStatus.AmbiguousPackages;
+            }
+
+            return oldResult;
+        }
+
+        private ReleaseInfo ConvertToReleaseInfo(GitHubRelease gh)
+        {
+            var info = new ReleaseInfo
+            {
+                Provider = ReleaseProviderType.GitHub,
+                Tag = gh.TagName,
+                Name = gh.Name,
+                Description = gh.Name,
+                IsDraft = gh.IsDraft,
+                IsPrerelease = gh.IsPrerelease,
+                PublishedAt = gh.PublishedAt,
+                WebUrl = gh.HtmlUrl
+            };
+            if (gh.Assets != null)
+            {
+                foreach (var asset in gh.Assets)
+                {
+                    info.Assets.Add(new ReleaseAssetInfo
+                    {
+                        Id = asset.Name,
+                        Name = asset.Name,
+                        DownloadUrl = asset.BrowserDownloadUrl,
+                        Size = asset.Size,
+                        ContentType = asset.ContentType
+                    });
+                }
+            }
+            return info;
+        }
+
+        private bool MatchesPattern(string filename, string globPattern)
+        {
+            string regexPattern = "^" + Regex.Escape(globPattern).Replace("\\*", ".*").Replace("\\?", ".") + "$";
+            return Regex.IsMatch(filename, regexPattern, RegexOptions.IgnoreCase);
+        }
+    }
+}

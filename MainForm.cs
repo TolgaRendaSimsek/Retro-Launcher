@@ -930,12 +930,32 @@ namespace RetroLauncher
                 this.ShowInTaskbar = true;
                 lblDetailsStatus.ForeColor = Color.FromArgb(239, 68, 68);
                 lblDetailsStatus.Text = $"Launch failed: {ex.Message}";
-                MessageBox.Show(
-                    $"Failed to launch game:\n{ex.Message}",
-                    "Launch Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
+                
+                if (ex is InvalidOperationException && (ex.Message.Contains("BIOS", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("firmware", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var promptResult = MessageBox.Show(
+                        $"{ex.Message}\n\nWould you like to open the BIOS/Firmware Manager now to import the required files?",
+                        "BIOS/Firmware Required",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning
+                    );
+                    if (promptResult == DialogResult.Yes)
+                    {
+                        using (var biosForm = new BiosManagerForm())
+                        {
+                            biosForm.ShowDialog(this);
+                        }
+                    }
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"Failed to launch game:\n{ex.Message}",
+                        "Launch Error",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                }
             }
         }
 

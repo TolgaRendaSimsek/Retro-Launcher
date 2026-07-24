@@ -20,12 +20,6 @@ namespace RetroLauncher
         Task<bool> VerifyAsync(string filePath, string expectedHash, CancellationToken token);
     }
 
-    public interface IArchiveExtractor
-    {
-        bool CanExtract(string archiveType);
-        Task<bool> ExtractAsync(string archivePath, string destinationPath, CancellationToken token);
-    }
-
     public interface IPackageRepository
     {
         void Load();

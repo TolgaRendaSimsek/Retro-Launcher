@@ -8,6 +8,12 @@ static class Program
     [STAThread]
     static void Main()
     {
+#if DEBUG
+        ReleaseAssetSelectorTests.RunTests();
+        ArchiveExtractorTests.RunTestsAsync().GetAwaiter().GetResult();
+        EmulatorUpdateServiceTests.RunTests();
+        GitHubReleaseProviderTests.RunTests();
+#endif
         // To customize application configuration such as set high DPI settings or default font,
         // see https://aka.ms/applicationconfiguration.
         ApplicationConfiguration.Initialize();

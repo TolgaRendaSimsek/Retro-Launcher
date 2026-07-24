@@ -1,0 +1,69 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace RetroLauncher
+{
+    public enum InstallationFailureReason
+    {
+        None,
+        ReleaseNotFound,
+        CompatibleAssetNotFound,
+        DownloadFailed,
+        ValidationFailed,
+        ExtractionFailed,
+        ExecutableNotFound,
+        EmulatorIsRunning,
+        BackupFailed,
+        InstallationFailed,
+        RollbackFailed,
+        Cancellation
+    }
+
+    public class EmulatorInstallationProgress
+    {
+        public string EmulatorId { get; set; } = "";
+        public string CurrentStep { get; set; } = "";
+        public int Percentage { get; set; }
+    }
+
+    public class InstalledEmulatorInfo
+    {
+        public string EmulatorId { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string InstalledVersion { get; set; } = "";
+        public string ReleaseTag { get; set; } = "";
+        public DateTime InstalledAt { get; set; }
+        public string InstallationPath { get; set; } = "";
+        public string ExecutablePath { get; set; } = "";
+        public string SourceRepository { get; set; } = "";
+        public string SourceAssetName { get; set; } = "";
+        public string SourceDownloadUrl { get; set; } = "";
+        public long DownloadedArchiveSize { get; set; }
+        public string SHA256 { get; set; } = "";
+        public string Architecture { get; set; } = "";
+        public string ReleaseChannel { get; set; } = "";
+    }
+
+    public class EmulatorInstallationRequest
+    {
+        public string EmulatorId { get; set; } = "";
+        public string? TargetReleaseTag { get; set; } // Null triggers latest release
+        public IProgress<EmulatorInstallationProgress>? Progress { get; set; }
+        public CancellationToken CancellationToken { get; set; }
+    }
+
+    public class EmulatorInstallationResult
+    {
+        public bool Success { get; set; }
+        public InstalledEmulatorInfo? InstalledInfo { get; set; }
+        public InstallationFailureReason FailureReason { get; set; }
+        public string? ErrorMessage { get; set; }
+    }
+
+    public interface IEmulatorInstallationService
+    {
+        Task<EmulatorInstallationResult> InstallAsync(EmulatorInstallationRequest request);
+    }
+}

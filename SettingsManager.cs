@@ -19,80 +19,33 @@ namespace RetroLauncher
 
     public static class SettingsManager
     {
-        private static readonly string SettingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.json");
-
         public static SettingsConfig LoadSettings()
         {
-            try
+            var service = ApplicationSettingsService.Instance;
+            service.LoadSettings();
+            return new SettingsConfig
             {
-                string pathToUse = SettingsPath;
-                
-                if (!File.Exists(pathToUse))
-                {
-                    string localPath = Path.Combine(Directory.GetCurrentDirectory(), "settings.json");
-                    if (File.Exists(localPath))
-                    {
-                        pathToUse = localPath;
-                    }
-                }
-
-                if (!File.Exists(pathToUse))
-                {
-                    return new SettingsConfig();
-                }
-
-                string json = File.ReadAllText(pathToUse);
-                var options = new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                };
-
-                return JsonSerializer.Deserialize<SettingsConfig>(json, options) ?? new SettingsConfig();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error loading settings: {ex.Message}");
-                return new SettingsConfig();
-            }
+                DefaultEmulators = service.DefaultEmulators,
+                IsFirstRun = service.IsFirstRun,
+                WindowWidth = service.WindowWidth,
+                WindowHeight = service.WindowHeight,
+                WindowLeft = service.WindowLeft,
+                WindowTop = service.WindowTop,
+                IsMaximized = service.IsMaximized
+            };
         }
 
         public static void SaveSettings(SettingsConfig settings)
         {
-            try
-            {
-                string pathToUse = SettingsPath;
-                if (!File.Exists(pathToUse))
-                {
-                    string localPath = Path.Combine(Directory.GetCurrentDirectory(), "settings.json");
-                    if (File.Exists(localPath))
-                    {
-                        pathToUse = localPath;
-                    }
-                }
-
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                };
-                string json = JsonSerializer.Serialize(settings, options);
-                
-                string? dir = Path.GetDirectoryName(pathToUse);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-                
-                File.WriteAllText(pathToUse, json);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(
-                    $"Failed to save settings.\n\nError: {ex.Message}",
-                    "Settings Save Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
-            }
+            var service = ApplicationSettingsService.Instance;
+            service.DefaultEmulators = settings.DefaultEmulators;
+            service.IsFirstRun = settings.IsFirstRun;
+            service.WindowWidth = settings.WindowWidth;
+            service.WindowHeight = settings.WindowHeight;
+            service.WindowLeft = settings.WindowLeft;
+            service.WindowTop = settings.WindowTop;
+            service.IsMaximized = settings.IsMaximized;
+            service.SaveSettings();
         }
     }
 }

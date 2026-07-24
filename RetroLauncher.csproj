@@ -15,6 +15,11 @@
     <None Update="mock_update.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="SharpCompress" Version="0.50.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.10" />
+  </ItemGroup>
+
   <Target Name="BuildUpdater" AfterTargets="Build">
     <MSBuild Projects="RetroLauncherUpdater\RetroLauncherUpdater.csproj" Targets="Build" Properties="Configuration=$(Configuration);OutputPath=$(TargetDir)" />
   </Target>

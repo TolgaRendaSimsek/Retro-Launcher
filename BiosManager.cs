@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -322,6 +323,11 @@ namespace RetroLauncher
 
         public async Task<bool> DownloadBiosFromApiAsync(string console, string apiEndpoint, Action<int> progressCallback)
         {
+            if (string.Equals(console, "Sony PlayStation 3", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("PlayStation 3 system firmware cannot be downloaded automatically. You must import your own legally obtained PS3UPDAT.PUP firmware update package.");
+            }
+
             string tempFile = "";
             try
             {
@@ -492,6 +498,31 @@ namespace RetroLauncher
                                     File.WriteAllText(portableFile, "");
                                 }
                             }
+                        }
+                    }
+
+                    // For RPCS3, silently install firmware PUP package to generate dev_flash
+                    if (string.Equals(item.Emulator, "RPCS3", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string emuDir = Path.GetFullPath(Path.Combine(destFolder, ".."));
+                        string rpcs3Exe = Path.Combine(emuDir, "rpcs3.exe");
+                        if (File.Exists(rpcs3Exe))
+                        {
+                            var psi = new ProcessStartInfo
+                            {
+                                FileName = rpcs3Exe,
+                                Arguments = $"--installfw \"{destFile}\"",
+                                UseShellExecute = false,
+                                CreateNoWindow = true
+                            };
+                            try
+                            {
+                                using (var p = Process.Start(psi))
+                                {
+                                    p?.WaitForExit(15000);
+                                }
+                            }
+                            catch { }
                         }
                     }
                 }

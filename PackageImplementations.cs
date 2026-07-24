@@ -162,11 +162,10 @@ namespace RetroLauncher
     {
         public bool CanExtract(string archiveType) => string.Equals(archiveType, "zip", StringComparison.OrdinalIgnoreCase);
 
-        public async Task<bool> ExtractAsync(string archivePath, string destinationPath, CancellationToken token)
+        public async Task<ArchiveExtractionResult> ExtractAsync(ArchiveExtractionRequest request)
         {
-            if (!Directory.Exists(destinationPath)) Directory.CreateDirectory(destinationPath);
-            await Task.Run(() => ZipFile.ExtractToDirectory(archivePath, destinationPath, true), token);
-            return true;
+            var secureExtractor = new SecureArchiveExtractor();
+            return await secureExtractor.ExtractAsync(request);
         }
     }
 
@@ -174,31 +173,10 @@ namespace RetroLauncher
     {
         public bool CanExtract(string archiveType) => string.Equals(archiveType, "7z", StringComparison.OrdinalIgnoreCase);
 
-        public async Task<bool> ExtractAsync(string archivePath, string destinationPath, CancellationToken token)
+        public async Task<ArchiveExtractionResult> ExtractAsync(ArchiveExtractionRequest request)
         {
-            if (!Directory.Exists(destinationPath)) Directory.CreateDirectory(destinationPath);
-            return await Task.Run(() =>
-            {
-                try
-                {
-                    ProcessStartInfo psi = new ProcessStartInfo
-                    {
-                        FileName = "tar.exe",
-                        Arguments = $"-xf \"{archivePath}\" -C \"{destinationPath}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    using (var proc = Process.Start(psi))
-                    {
-                        proc?.WaitForExit();
-                        return proc?.ExitCode == 0;
-                    }
-                }
-                catch
-                {
-                    return false;
-                }
-            }, token);
+            var secureExtractor = new SecureArchiveExtractor();
+            return await secureExtractor.ExtractAsync(request);
         }
     }
 

@@ -247,10 +247,19 @@ namespace RetroLauncher
             token.ThrowIfCancellationRequested();
             Log($"Extracting archive to: {destDir}");
 
-            bool ok = await extractor.ExtractAsync(archivePath, destDir, token);
-            if (!ok)
+            var extractRequest = new ArchiveExtractionRequest
             {
-                throw new Exception("Extraction failed.");
+                ArchivePath = archivePath,
+                DestinationPath = destDir,
+                CancellationToken = token,
+                Progress = new Progress<ArchiveExtractionProgress>(p => progress?.Report(85 + (int)(p.Percentage * 0.10))),
+                ExecutableCandidates = !string.IsNullOrEmpty(package.executablePath) ? new List<string> { package.executablePath } : new List<string>()
+            };
+
+            var extractResult = await extractor.ExtractAsync(extractRequest);
+            if (!extractResult.Success)
+            {
+                throw new Exception($"Extraction failed: {extractResult.ErrorMessage}");
             }
 
             // Restore backed-up user settings

@@ -27,6 +27,7 @@ namespace RetroLauncher
         public bool RequiresBIOS { get; set; } = false;
         public bool RequiresFirmware { get; set; } = false;
         public string DefaultLaunchArguments { get; set; } = "";
+        public string ReleaseChannel { get; set; } = "Stable";
 
         // Backward compatibility properties
         public string Path { get => ExecutablePath; set => ExecutablePath = value; }
@@ -624,9 +625,21 @@ namespace RetroLauncher
             return null;
         }
 
-        private static bool IsUpdateAvailable(string currentVersion, string latestVersion)
+        public static bool IsUpdateAvailable(string emuId, string currentVersion, string latestVersion)
         {
             if (string.IsNullOrEmpty(currentVersion) || string.IsNullOrEmpty(latestVersion)) return false;
+            if (currentVersion == latestVersion) return false;
+
+            if (string.Equals(emuId, "rpcs3", StringComparison.OrdinalIgnoreCase))
+            {
+                int currentBuild = ParseRpcs3BuildNumber(currentVersion);
+                int latestBuild = ParseRpcs3BuildNumber(latestVersion);
+                if (currentBuild > 0 && latestBuild > 0)
+                {
+                    return latestBuild > currentBuild;
+                }
+            }
+
             string cleanCurrent = CleanVersionString(currentVersion);
             string cleanLatest = CleanVersionString(latestVersion);
 
@@ -636,6 +649,22 @@ namespace RetroLauncher
                 return valLatest > valCurrent;
             }
             return string.Compare(cleanLatest, cleanCurrent, StringComparison.OrdinalIgnoreCase) > 0;
+        }
+
+        private static int ParseRpcs3BuildNumber(string version)
+        {
+            if (string.IsNullOrEmpty(version)) return 0;
+            var match = System.Text.RegularExpressions.Regex.Match(version, @"-(\d+)(?:-|$)");
+            if (match.Success && int.TryParse(match.Groups[1].Value, out int buildNum))
+            {
+                return buildNum;
+            }
+            return 0;
+        }
+
+        private static bool IsUpdateAvailable(string currentVersion, string latestVersion)
+        {
+            return IsUpdateAvailable("", currentVersion, latestVersion);
         }
 
         private static string CleanVersionString(string ver)
