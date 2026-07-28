@@ -37,6 +37,8 @@ namespace RetroLauncher
         public List<string> BiosDirectoryCandidates { get; set; } = new();
         public EmulatorReleaseChannel ReleaseChannel { get; set; } = EmulatorReleaseChannel.Stable;
         public EmulatorReleaseSourceType ReleaseSourceType { get; set; } = EmulatorReleaseSourceType.GitHubLatestRelease;
+        public List<string> PreservedDirectories { get; set; } = new();
+        public List<string> PreservedFiles { get; set; } = new();
 
         // Extra metadata preserved for UI/Launcher compatibility
         public string ConsoleName { get; set; } = "";

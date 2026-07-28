@@ -40,11 +40,31 @@ namespace RetroLauncher
 
             string opId = request.OperationId;
             EmulatorInstallDiagnosticsLogger.StartSession(opId, request.EmulatorId);
+            EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Initiated operation '{request.Operation}' for '{request.EmulatorId}'");
 
             PackageInstallResult? result = null;
             try
             {
-                result = await InstallInternalAsync(request);
+                switch (request.Operation)
+                {
+                    case EmulatorInstallationOperation.Install:
+                        result = await InstallInternalAsync(request);
+                        break;
+                    case EmulatorInstallationOperation.Update:
+                        result = await UpdateAsync(request);
+                        break;
+                    case EmulatorInstallationOperation.Reinstall:
+                        result = await ReinstallAsync(request);
+                        break;
+                    case EmulatorInstallationOperation.Repair:
+                        result = await RepairAsync(request);
+                        break;
+                    case EmulatorInstallationOperation.Uninstall:
+                        result = await UninstallAsync(request);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
                 return result;
             }
             catch (Exception ex)
@@ -294,9 +314,12 @@ namespace RetroLauncher
 
             string calculatedHash = verifyResult.CalculatedHash ?? "";
 
-            // Step 7: Extract and Deploy (Transactional staging, backup, normalization, and rollback)
+            // Step 7: Extract to Staging Sandbox
             ReportProgress(request, PackageInstallStage.Extracting, "Extracting files...", 80);
             string finalDestPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, definition.InstallDirectoryName));
+            string stagingDir = Path.Combine(AppContext.BaseDirectory, "temp", "install", definition.Id, opId, "staging");
+            string backupDir = Path.Combine(AppContext.BaseDirectory, "temp", "install", definition.Id, opId, "backup");
+
             EmulatorInstallDiagnosticsLogger.SetArchiveType(opId, Path.GetExtension(asset.Name).ToLower().TrimStart('.'));
             EmulatorInstallDiagnosticsLogger.SetExtractionDestination(opId, finalDestPath);
 
@@ -309,7 +332,7 @@ namespace RetroLauncher
             var extractionReq = new ArchiveExtractionRequest
             {
                 ArchivePath = archivePath,
-                DestinationPath = finalDestPath,
+                DestinationPath = stagingDir, // Extract to staging directory!
                 CancellationToken = request.CancellationToken,
                 Progress = extractionProgress,
                 ExecutableCandidates = definition.ExecutableCandidates,
@@ -327,6 +350,7 @@ namespace RetroLauncher
             if (!extractionResult.Success)
             {
                 EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Error: Extraction failed: {extractionResult.ErrorMessage}");
+                CleanDirectory(stagingDir);
                 return new PackageInstallResult
                 {
                     Success = false,
@@ -341,24 +365,25 @@ namespace RetroLauncher
                 };
             }
 
-            // Step 8: Locating executable
+            // Step 8: Locating executable inside staging
             ReportProgress(request, PackageInstallStage.LocatingExecutable, "Locating executable...", 96);
-            string finalExePath = extractionResult.MainExecutablePath ?? "";
+            string stagingExePath = extractionResult.MainExecutablePath ?? "";
             
             if (extractionResult.DiscoveredExecutables != null)
             {
                 EmulatorInstallDiagnosticsLogger.SetDiscoveredExecutables(opId, extractionResult.DiscoveredExecutables);
             }
 
-            if (string.IsNullOrEmpty(finalExePath) || !File.Exists(finalExePath))
+            if (string.IsNullOrEmpty(stagingExePath) || !File.Exists(stagingExePath))
             {
-                EmulatorInstallDiagnosticsLogger.LogToSession(opId, "Error: Located executable is missing inside deployed folder.");
+                EmulatorInstallDiagnosticsLogger.LogToSession(opId, "Error: Located executable is missing inside staging folder.");
+                CleanDirectory(stagingDir);
                 return new PackageInstallResult
                 {
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.LocatingExecutable,
-                    ErrorMessage = "Located executable is missing inside deployed folder.",
+                    ErrorMessage = "Located executable is missing inside staging folder.",
                     SelectedAssetName = asset.Name,
                     ArchivePath = archivePath,
                     DownloadedFileSize = archiveSize,
@@ -367,90 +392,331 @@ namespace RetroLauncher
                 };
             }
 
-            EmulatorInstallDiagnosticsLogger.SetFinalExecutablePath(opId, finalExePath);
+            // Step 9: Transactional Deployment to finalDestPath (move current, move staging, restore config, register)
+            bool backedUp = false;
+            bool deployed = false;
+            string finalExePath = Path.Combine(finalDestPath, Path.GetRelativePath(stagingDir, stagingExePath));
 
-            // Security & correctness check: Ensure executable resides inside the destination folder
-            string canonicalDest = Path.GetFullPath(finalDestPath) + Path.DirectorySeparatorChar;
-            string canonicalExe = Path.GetFullPath(finalExePath);
-
-            if (!canonicalExe.StartsWith(canonicalDest, StringComparison.OrdinalIgnoreCase))
-            {
-                EmulatorInstallDiagnosticsLogger.LogToSession(opId, "Error: Deployment validation failed: executable is located outside the intended directory.");
-                return new PackageInstallResult
-                {
-                    Success = false,
-                    PackageId = definition.Id,
-                    FailedStage = PackageInstallStage.LocatingExecutable,
-                    ErrorMessage = "Deployment validation failed: executable is located outside the intended emulator directory.",
-                    SelectedAssetName = asset.Name,
-                    ArchivePath = archivePath,
-                    DownloadedFileSize = archiveSize,
-                    Version = selectedRelease.Tag,
-                    InstallDirectory = finalDestPath,
-                    ExecutablePath = finalExePath
-                };
-            }
-
-            // Read version metadata
-            string installedVersion = "Unknown";
             try
             {
-                var fileVersion = System.Diagnostics.FileVersionInfo.GetVersionInfo(finalExePath);
-                installedVersion = fileVersion.ProductVersion ?? fileVersion.FileVersion ?? selectedRelease.Tag ?? "Unknown";
+                // Verify if emulator is running right before deployment
+                if (IsEmulatorRunning(definition))
+                {
+                    throw new Exception("Emulator executable is running. Refusing to overwrite files.");
+                }
+
+                // 1. Backup existing installation folder
+                if (Directory.Exists(finalDestPath))
+                {
+                    if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true);
+                    Directory.CreateDirectory(Path.GetDirectoryName(backupDir)!);
+                    Directory.Move(finalDestPath, backupDir);
+                    backedUp = true;
+                    EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Deployment: Backed up old folder to '{backupDir}'");
+                }
+
+                // 2. Move staging to final folder
+                Directory.CreateDirectory(Path.GetDirectoryName(finalDestPath)!);
+                Directory.Move(stagingDir, finalDestPath);
+                deployed = true;
+                EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Deployment: Moved staging folder to '{finalDestPath}'");
+
+                // 3. Restore user configuration and save files from backup
+                if (backedUp && Directory.Exists(backupDir))
+                {
+                    RestoreUserFolders(backupDir, finalDestPath, definition);
+                    EmulatorInstallDiagnosticsLogger.LogToSession(opId, "Deployment: Restored user configuration/save data from backup");
+                }
+
+                // 4. Validate executable existence in final folder
+                if (!File.Exists(finalExePath))
+                {
+                    throw new FileNotFoundException("Deployed executable is missing in target directory.", finalExePath);
+                }
+                EmulatorInstallDiagnosticsLogger.SetFinalExecutablePath(opId, finalExePath);
+
+                // 5. Write manifest file inside target directory
+                string installedVersion = "Unknown";
+                try
+                {
+                    var fileVersion = System.Diagnostics.FileVersionInfo.GetVersionInfo(finalExePath);
+                    installedVersion = fileVersion.ProductVersion ?? fileVersion.FileVersion ?? selectedRelease.Tag ?? "Unknown";
+                }
+                catch { }
+
+                ReportProgress(request, PackageInstallStage.Registering, "Registering emulator...", 98);
+                var infoRecord = new InstalledEmulatorInfo
+                {
+                    EmulatorId = definition.Id,
+                    DisplayName = definition.DisplayName,
+                    InstalledVersion = installedVersion,
+                    ReleaseTag = selectedRelease.Tag,
+                    InstalledAt = DateTime.UtcNow,
+                    InstallationPath = finalDestPath,
+                    ExecutablePath = finalExePath,
+                    SourceRepository = $"{definition.GitHubOwner}/{definition.GitHubRepository}",
+                    SourceAssetName = asset.Name,
+                    SourceDownloadUrl = asset.DownloadUrl,
+                    DownloadedArchiveSize = asset.Size,
+                    SHA256 = calculatedHash,
+                    Architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
+                    ReleaseChannel = definition.ReleaseChannel.ToString()
+                };
+
+                WriteInstallationManifest(finalDestPath, infoRecord);
+
+                // 6. Save package configuration changes to emulators.json
+                bool registrySaved = UpdateLauncherRegistry(infoRecord, definition);
+                if (!registrySaved)
+                {
+                    throw new Exception("Failed to update and save the emulator registration in local config registry.");
+                }
+
+                // 7. Clean up backup directory
+                if (backedUp)
+                {
+                    CleanDirectory(backupDir);
+                    EmulatorInstallDiagnosticsLogger.SetCleanupResult(opId, "Successfully cleaned up backup folder");
+                }
+
+                ReportProgress(request, PackageInstallStage.Completed, "Installed successfully.", 100);
+
+                return new PackageInstallResult
+                {
+                    Success = true,
+                    PackageId = definition.Id,
+                    Version = installedVersion,
+                    InstallDirectory = finalDestPath,
+                    ExecutablePath = finalExePath,
+                    FailedStage = PackageInstallStage.Completed,
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    DownloadedFileSize = archiveSize
+                };
             }
-            catch { }
-
-            // Step 10: Update registry records (Registering emulator)
-            ReportProgress(request, PackageInstallStage.Registering, "Registering emulator...", 98);
-            var infoRecord = new InstalledEmulatorInfo
+            catch (Exception ex)
             {
-                EmulatorId = definition.Id,
-                DisplayName = definition.DisplayName,
-                InstalledVersion = installedVersion,
-                ReleaseTag = selectedRelease.Tag,
-                InstalledAt = DateTime.UtcNow,
-                InstallationPath = finalDestPath,
-                ExecutablePath = finalExePath,
-                SourceRepository = $"{definition.GitHubOwner}/{definition.GitHubRepository}",
-                SourceAssetName = asset.Name,
-                SourceDownloadUrl = asset.DownloadUrl,
-                DownloadedArchiveSize = asset.Size,
-                SHA256 = calculatedHash,
-                Architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
-                ReleaseChannel = definition.ReleaseChannel.ToString()
-            };
+                EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Deployment Error: {ex.Message}. Initiating rollback...");
+                
+                // Rollback Phase
+                if (deployed)
+                {
+                    try { Directory.Delete(finalDestPath, true); } catch { }
+                }
+                if (backedUp && Directory.Exists(backupDir))
+                {
+                    try
+                    {
+                        Directory.Move(backupDir, finalDestPath);
+                        EmulatorInstallDiagnosticsLogger.LogToSession(opId, "Rollback: Restored previous installation folder successfully.");
+                    }
+                    catch (Exception rollEx)
+                    {
+                        EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"CRITICAL: Rollback failed! Previous installation folder could not be restored: {rollEx.Message}");
+                    }
+                }
 
-            // Write install.json inside target directory
-            WriteInstallationManifest(finalDestPath, infoRecord);
+                // Clean staging folder
+                CleanDirectory(stagingDir);
 
-            // Update emulators.json config and verify it succeeded
-            bool registrySaved = UpdateLauncherRegistry(infoRecord, definition);
-            if (!registrySaved)
-            {
-                EmulatorInstallDiagnosticsLogger.LogToSession(opId, "Error: Failed to update launcher registry.");
                 return new PackageInstallResult
                 {
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.Registering,
-                    ErrorMessage = "Failed to update and save the emulator registration in the local config registry."
+                    ErrorMessage = $"Deployment failed: {ex.Message}",
+                    Exception = ex,
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    DownloadedFileSize = archiveSize,
+                    Version = selectedRelease.Tag,
+                    InstallDirectory = finalDestPath
+                };
+            }
+        }
+
+        public async Task<PackageInstallResult> UpdateAsync(EmulatorInstallationRequest request)
+        {
+            var definition = _definitionProvider.GetById(request.EmulatorId);
+            if (definition != null && IsEmulatorRunning(definition))
+            {
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = request.EmulatorId,
+                    FailedStage = PackageInstallStage.ResolvingRelease,
+                    ErrorMessage = $"Cannot update '{definition.DisplayName}' because it is currently running. Please close the application and retry."
+                };
+            }
+            return await InstallInternalAsync(request);
+        }
+
+        public async Task<PackageInstallResult> ReinstallAsync(EmulatorInstallationRequest request)
+        {
+            var definition = _definitionProvider.GetById(request.EmulatorId);
+            if (definition != null && IsEmulatorRunning(definition))
+            {
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = request.EmulatorId,
+                    FailedStage = PackageInstallStage.ResolvingRelease,
+                    ErrorMessage = $"Cannot reinstall '{definition.DisplayName}' because it is currently running. Please close the application and retry."
+                };
+            }
+            return await InstallInternalAsync(request);
+        }
+
+        public async Task<PackageInstallResult> RepairAsync(EmulatorInstallationRequest request)
+        {
+            var definition = _definitionProvider.GetById(request.EmulatorId);
+            if (definition == null)
+            {
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = request.EmulatorId,
+                    FailedStage = PackageInstallStage.ResolvingRelease,
+                    ErrorMessage = $"Emulator definition '{request.EmulatorId}' not found."
                 };
             }
 
-            ReportProgress(request, PackageInstallStage.Completed, "Installed successfully.", 100);
+            if (IsEmulatorRunning(definition))
+            {
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = request.EmulatorId,
+                    FailedStage = PackageInstallStage.ResolvingRelease,
+                    ErrorMessage = $"Cannot repair '{definition.DisplayName}' because it is currently running. Please close the application and retry."
+                };
+            }
+
+            var emuItem = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(x => string.Equals(x.Id, request.EmulatorId, StringComparison.OrdinalIgnoreCase));
+            bool isBroken = false;
+            
+            if (emuItem == null || emuItem.Status != "Installed" || string.IsNullOrEmpty(emuItem.InstallFolder) || string.IsNullOrEmpty(emuItem.Path))
+            {
+                isBroken = true;
+            }
+            else
+            {
+                string resolvedFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emuItem.InstallFolder));
+                string resolvedExe = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emuItem.Path));
+                
+                if (!Directory.Exists(resolvedFolder) || !File.Exists(resolvedExe))
+                {
+                    isBroken = true;
+                }
+                else
+                {
+                    string manifestPath = Path.Combine(resolvedFolder, "install.json");
+                    if (!File.Exists(manifestPath))
+                    {
+                        isBroken = true;
+                    }
+                }
+            }
+
+            if (isBroken)
+            {
+                EmulatorInstallDiagnosticsLogger.LogToSession(request.OperationId, "Repair: Emulator installation is incomplete or missing. Initiating full reinstall.");
+                return await ReinstallAsync(request);
+            }
+
+            EmulatorInstallDiagnosticsLogger.LogToSession(request.OperationId, "Repair: No consistency issues detected. Skipping reinstall.");
+            return new PackageInstallResult
+            {
+                Success = true,
+                PackageId = request.EmulatorId,
+                Version = emuItem?.InstalledVersion ?? "Unknown",
+                InstallDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emuItem?.InstallFolder ?? "")),
+                ExecutablePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emuItem?.Path ?? "")),
+                FailedStage = PackageInstallStage.Completed
+            };
+        }
+
+        public async Task<PackageInstallResult> UninstallAsync(EmulatorInstallationRequest request)
+        {
+            var definition = _definitionProvider.GetById(request.EmulatorId);
+            if (definition != null && IsEmulatorRunning(definition))
+            {
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = request.EmulatorId,
+                    FailedStage = PackageInstallStage.ResolvingRelease,
+                    ErrorMessage = $"Cannot uninstall '{definition.DisplayName}' because it is currently running. Please close the application and retry."
+                };
+            }
+
+            var emuItem = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(x => string.Equals(x.Id, request.EmulatorId, StringComparison.OrdinalIgnoreCase));
+            if (emuItem != null && !string.IsNullOrEmpty(emuItem.InstallFolder))
+            {
+                string resolvedFolder = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emuItem.InstallFolder));
+                if (Directory.Exists(resolvedFolder))
+                {
+                    bool keepData = request.UninstallKeepUserData ?? true;
+                    if (keepData)
+                    {
+                        var preservedDirs = definition?.PreservedDirectories ?? new List<string> { "bios", "saves", "configs", "screenshots", "games", "roms" };
+                        var preservedFiles = definition?.PreservedFiles ?? new List<string> { "portable.txt" };
+
+                        foreach (string file in Directory.GetFiles(resolvedFolder))
+                        {
+                            string fileName = Path.GetFileName(file);
+                            if (preservedFiles.Any(x => string.Equals(x, fileName, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                continue;
+                            }
+                            try { File.Delete(file); } catch { }
+                        }
+
+                        foreach (string subDir in Directory.GetDirectories(resolvedFolder))
+                        {
+                            string dirName = Path.GetFileName(subDir);
+                            if (preservedDirs.Any(x => string.Equals(x, dirName, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                continue;
+                            }
+                            try { Directory.Delete(subDir, true); } catch { }
+                        }
+                    }
+                    else
+                    {
+                        try { Directory.Delete(resolvedFolder, true); } catch { }
+                    }
+                }
+
+                // Remove registry records
+                emuItem.InstalledVersion = "";
+                emuItem.ExecutablePath = "";
+                emuItem.Status = "Missing";
+                emuItem.SelectedAssetName = "";
+                emuItem.GithubRepository = "";
+                EmulatorManager.Instance.SaveEmulators();
+            }
 
             return new PackageInstallResult
             {
                 Success = true,
-                PackageId = definition.Id,
-                Version = installedVersion,
-                InstallDirectory = finalDestPath,
-                ExecutablePath = finalExePath,
-                FailedStage = PackageInstallStage.Completed,
-                SelectedAssetName = asset.Name,
-                ArchivePath = archivePath,
-                DownloadedFileSize = archiveSize
+                PackageId = request.EmulatorId,
+                FailedStage = PackageInstallStage.Completed
             };
+        }
+
+        private bool IsEmulatorRunning(EmulatorPackageDefinition definition)
+        {
+            foreach (var exeCandidate in definition.ExecutableCandidates)
+            {
+                string processName = Path.GetFileNameWithoutExtension(exeCandidate);
+                var activeProcesses = System.Diagnostics.Process.GetProcessesByName(processName);
+                if (activeProcesses.Any())
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void ReportProgress(EmulatorInstallationRequest request, PackageInstallStage stage, string step, int pct)
@@ -467,13 +733,14 @@ namespace RetroLauncher
             });
         }
 
-        private static void RestoreUserFolders(string sourceBackup, string destFolder)
+        private static void RestoreUserFolders(string sourceBackup, string destFolder, EmulatorPackageDefinition definition)
         {
-            string[] userDirs = { 
-                "bios", "saves", "configs", "screenshots", "games", "roms",
-                "dev_hdd0", "dev_flash", "GuiConfigs", "cache" 
-            };
-            foreach (var dirName in userDirs)
+            // NOTE: We always COPY from backup (never move) so that the backup
+            // directory remains fully intact. This is critical for rollback: if
+            // deployment finalization fails after RestoreUserFolders runs, the
+            // rollback code can still move the intact backup back as-is.
+            var preservedDirs = definition.PreservedDirectories;
+            foreach (var dirName in preservedDirs)
             {
                 string src = Path.Combine(sourceBackup, dirName);
                 string dst = Path.Combine(destFolder, dirName);
@@ -481,22 +748,8 @@ namespace RetroLauncher
                 {
                     try
                     {
-                        if (Directory.Exists(dst))
-                        {
-                            if (string.Equals(dirName, "cache", StringComparison.OrdinalIgnoreCase))
-                            {
-                                try { Directory.Delete(dst, true); } catch { }
-                                Directory.Move(src, dst);
-                            }
-                            else
-                            {
-                                CopyDirectoryRecursively(src, dst);
-                            }
-                        }
-                        else
-                        {
-                            Directory.Move(src, dst);
-                        }
+                        // Always copy so backup stays intact for potential rollback
+                        CopyDirectoryRecursively(src, dst);
                     }
                     catch (Exception ex)
                     {
@@ -505,8 +758,8 @@ namespace RetroLauncher
                 }
             }
 
-            string[] configFiles = { "config.yml", "games.yml", "portable.txt" };
-            foreach (var file in configFiles)
+            var preservedFiles = definition.PreservedFiles;
+            foreach (var file in preservedFiles)
             {
                 string srcFile = Path.Combine(sourceBackup, file);
                 string dstFile = Path.Combine(destFolder, file);
@@ -514,6 +767,9 @@ namespace RetroLauncher
                 {
                     try
                     {
+                        string? dstDir = Path.GetDirectoryName(dstFile);
+                        if (dstDir != null && !Directory.Exists(dstDir))
+                            Directory.CreateDirectory(dstDir);
                         File.Copy(srcFile, dstFile, true);
                     }
                     catch (Exception ex)

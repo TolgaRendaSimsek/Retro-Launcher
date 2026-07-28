@@ -47,11 +47,22 @@ namespace RetroLauncher
         public string ReleaseChannel { get; set; } = "";
     }
 
+    public enum EmulatorInstallationOperation
+    {
+        Install,
+        Repair,
+        Update,
+        Reinstall,
+        Uninstall
+    }
+
     public class EmulatorInstallationRequest
     {
         public string EmulatorId { get; set; } = "";
         public string OperationId { get; set; } = Guid.NewGuid().ToString("N");
         public string? TargetReleaseTag { get; set; } // Null triggers latest release
+        public EmulatorInstallationOperation Operation { get; set; } = EmulatorInstallationOperation.Install;
+        public bool? UninstallKeepUserData { get; set; }
         public IProgress<EmulatorInstallationProgress>? Progress { get; set; }
         public CancellationToken CancellationToken { get; set; }
     }
@@ -59,5 +70,9 @@ namespace RetroLauncher
     public interface IEmulatorInstallationService
     {
         Task<PackageInstallResult> InstallAsync(EmulatorInstallationRequest request);
+        Task<PackageInstallResult> RepairAsync(EmulatorInstallationRequest request);
+        Task<PackageInstallResult> UpdateAsync(EmulatorInstallationRequest request);
+        Task<PackageInstallResult> ReinstallAsync(EmulatorInstallationRequest request);
+        Task<PackageInstallResult> UninstallAsync(EmulatorInstallationRequest request);
     }
 }

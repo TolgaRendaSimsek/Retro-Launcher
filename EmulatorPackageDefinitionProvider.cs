@@ -20,6 +20,7 @@ namespace RetroLauncher
     {
         private readonly string _filePath;
         private readonly List<EmulatorPackageDefinition> _definitions = new();
+        private bool _needsSave = false;
 
         public JsonEmulatorPackageDefinitionProvider(string? filePath = null)
         {
@@ -53,6 +54,7 @@ namespace RetroLauncher
                             {
                                 try
                                 {
+                                    MigrateOldDirectory(def);
                                     Validate(def);
                                     // Check duplicates
                                     if (verifiedList.Any(x => string.Equals(x.Id, def.Id, StringComparison.OrdinalIgnoreCase)))
@@ -88,6 +90,11 @@ namespace RetroLauncher
                     _definitions.Clear();
                     _definitions.AddRange(defaults);
                     SaveDefinitions(); // Attempt to seed the directory
+                }
+                else if (_needsSave)
+                {
+                    RetroLogger.Log("Saving migrated emulator definitions back to disk.");
+                    SaveDefinitions();
                 }
             }
             catch (Exception ex)
@@ -238,10 +245,12 @@ namespace RetroLauncher
                     ExcludeAssetPatterns = new List<string>(),
                     SupportedArchiveTypes = new List<string> { "zip", "7z" },
                     ExecutableCandidates = new List<string> { "duckstation-qt-x64-ReleaseLTCG.exe", "duckstation-qt-x64-Release.exe", "duckstation-qt.exe", "duckstation.exe" },
-                    InstallDirectoryName = "Emulators/PS1",
+                    InstallDirectoryName = "Emulators/DuckStation",
                     LaunchArgumentsTemplate = "-fullscreen -nogui \"{rom}\"",
                     RequiresBios = true,
                     BiosDirectoryCandidates = new List<string> { "bios" },
+                    PreservedDirectories = new List<string> { "bios", "savestates", "memcards", "screenshots", "inis", "settings" },
+                    PreservedFiles = new List<string> { "portable.txt" },
 
                     // UI Compatibility fields
                     SupportedRomExtensions = new List<string> { ".bin", ".cue", ".img", ".iso", ".chd", ".m3u", ".pbp" },
@@ -265,11 +274,13 @@ namespace RetroLauncher
                     ExcludeAssetPatterns = new List<string>(),
                     SupportedArchiveTypes = new List<string> { "7z", "zip" },
                     ExecutableCandidates = new List<string> { "pcsx2-qt.exe", "pcsx2.exe" },
-                    InstallDirectoryName = "Emulators/PS2",
+                    InstallDirectoryName = "Emulators/PCSX2",
                     LaunchArgumentsTemplate = "-fullscreen \"{rom}\"",
                     RequiresBios = true,
                     BiosDirectoryCandidates = new List<string> { "bios" },
                     ReleaseChannel = EmulatorReleaseChannel.Dev,
+                    PreservedDirectories = new List<string> { "bios", "memcards", "inis", "snaps", "savestates", "sstates", "games" },
+                    PreservedFiles = new List<string> { "portable.txt" },
 
                     // UI Compatibility fields
                     SupportedRomExtensions = new List<string> { ".iso", ".bin", ".elf", ".chd", ".cso" },
@@ -293,10 +304,12 @@ namespace RetroLauncher
                     ExcludeAssetPatterns = new List<string>(),
                     SupportedArchiveTypes = new List<string> { "7z", "zip" },
                     ExecutableCandidates = new List<string> { "rpcs3.exe" },
-                    InstallDirectoryName = "Emulators/PS3",
+                    InstallDirectoryName = "Emulators/RPCS3",
                     LaunchArgumentsTemplate = "--fullscreen \"{rom}\"",
                     RequiresBios = false,
                     BiosDirectoryCandidates = new List<string>(),
+                    PreservedDirectories = new List<string> { "dev_hdd0", "dev_flash", "GuiConfigs" },
+                    PreservedFiles = new List<string> { "config.yml", "games.yml" },
 
                     // UI Compatibility fields
                     SupportedRomExtensions = new List<string> { ".bin", ".pkg", ".iso" },
@@ -308,6 +321,74 @@ namespace RetroLauncher
                     DefaultEnabled = true
                 }
             };
+        }
+
+        private void MigrateOldDirectory(EmulatorPackageDefinition def)
+        {
+            bool migrated = false;
+            if (string.Equals(def.InstallDirectoryName, "Emulators/PS1", StringComparison.OrdinalIgnoreCase))
+            {
+                def.InstallDirectoryName = "Emulators/DuckStation";
+                migrated = true;
+            }
+            else if (string.Equals(def.InstallDirectoryName, "Emulators/PS2", StringComparison.OrdinalIgnoreCase))
+            {
+                def.InstallDirectoryName = "Emulators/PCSX2";
+                migrated = true;
+            }
+            else if (string.Equals(def.InstallDirectoryName, "Emulators/PS3", StringComparison.OrdinalIgnoreCase))
+            {
+                def.InstallDirectoryName = "Emulators/RPCS3";
+                migrated = true;
+            }
+
+            if (def.PreservedDirectories == null || def.PreservedDirectories.Count == 0)
+            {
+                def.PreservedDirectories = GetDefaultPreservedDirectories(def.Id);
+                migrated = true;
+            }
+            if (def.PreservedFiles == null || def.PreservedFiles.Count == 0)
+            {
+                def.PreservedFiles = GetDefaultPreservedFiles(def.Id);
+                migrated = true;
+            }
+
+            if (migrated)
+            {
+                _needsSave = true;
+            }
+        }
+
+        private List<string> GetDefaultPreservedDirectories(string id)
+        {
+            id = id.ToLowerInvariant();
+            if (id == "pcsx2")
+            {
+                return new List<string> { "bios", "memcards", "inis", "snaps", "savestates", "sstates", "games" };
+            }
+            if (id == "duckstation")
+            {
+                return new List<string> { "bios", "savestates", "memcards", "screenshots", "inis", "settings" };
+            }
+            if (id == "rpcs3")
+            {
+                return new List<string> { "dev_hdd0", "dev_flash", "GuiConfigs" };
+            }
+            return new List<string> { "bios", "saves", "configs", "screenshots", "games", "roms" };
+        }
+
+        private List<string> GetDefaultPreservedFiles(string id)
+        {
+            id = id.ToLowerInvariant();
+            if (id == "pcsx2" || id == "duckstation")
+            {
+                return new List<string> { "portable.txt" };
+            }
+            if (id == "rpcs3")
+            {
+                return new List<string> { "config.yml", "games.yml" };
+            }
+            return new List<string>();
         }
     }
 }

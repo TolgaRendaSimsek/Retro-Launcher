@@ -1008,59 +1008,80 @@ namespace RetroLauncher
             }
         }
 
-        private void btnUninstall_Click(object? sender, EventArgs e)
+        private async void btnUninstall_Click(object? sender, EventArgs e)
         {
             if (lbEmulators.SelectedItem is not EmulatorItem selectedEmu) return;
 
-            var result = MessageBox.Show(
-                $"Are you sure you want to uninstall application files for '{selectedEmu.Name}'?\n\nThis will NOT delete your BIOS, ROMs, Screenshots, or Save files.",
+            var confirmResult = MessageBox.Show(
+                $"Are you sure you want to uninstall application files for '{selectedEmu.Name}'?",
                 "Confirm Uninstall",
                 MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning
+            );
+
+            if (confirmResult != DialogResult.Yes) return;
+
+            var keepResult = MessageBox.Show(
+                "Do you want to keep your user configuration and save data (e.g. saves, memory cards, screenshots, config files)?",
+                "Keep Settings & Saves?",
+                MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Question
             );
 
-            if (result == DialogResult.Yes)
+            if (keepResult == DialogResult.Cancel) return;
+
+            bool keepData = (keepResult == DialogResult.Yes);
+
+            btnUninstall.Enabled = false;
+            btnInstallDuckStationApi.Enabled = false;
+            lblStatus.Text = "Uninstalling...";
+
+            try
             {
-                try
+                var req = new EmulatorInstallationRequest
                 {
-                    SafeUninstallEmulatorFiles(selectedEmu.InstallFolder);
+                    EmulatorId = selectedEmu.Id,
+                    Operation = EmulatorInstallationOperation.Uninstall,
+                    UninstallKeepUserData = keepData,
+                    CancellationToken = CancellationToken.None
+                };
+
+                var uninstallResult = await _installationService.UninstallAsync(req);
+                if (uninstallResult.Success)
+                {
                     selectedEmu.InstalledVersion = "";
                     selectedEmu.Status = "Missing";
                     selectedEmu.Path = "";
 
-                    EmulatorManager.SaveConfig(_config);
+                    // Reload settings
+                    _config = EmulatorManager.LoadConfig();
                     
+                    var updatedEmu = _config.Emulators.FirstOrDefault(x => string.Equals(x.Id, selectedEmu.Id, StringComparison.OrdinalIgnoreCase));
+                    if (updatedEmu != null)
+                    {
+                        selectedEmu = updatedEmu;
+                    }
+
                     UpdateDetectedStatus(selectedEmu);
                     RefreshList();
                     MessageBox.Show($"{selectedEmu.Name} files uninstalled successfully.", "Uninstall Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
-                catch (Exception ex)
+                else
                 {
-                    MessageBox.Show($"Uninstall failed:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"Uninstall failed:\n{uninstallResult.ErrorMessage}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
-        }
-
-        private void SafeUninstallEmulatorFiles(string installFolder)
-        {
-            if (string.IsNullOrEmpty(installFolder)) return;
-            string resolved = ResolvePath(installFolder);
-            if (!Directory.Exists(resolved)) return;
-
-            foreach (string file in Directory.GetFiles(resolved))
+            catch (Exception ex)
             {
-                try { File.Delete(file); } catch { }
+                MessageBox.Show($"Uninstall failed:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-
-            foreach (string subDir in Directory.GetDirectories(resolved))
+            finally
             {
-                string name = Path.GetFileName(subDir).ToLower();
-                if (name == "bios" || name == "saves" || name == "configs" || 
-                    name == "screenshots" || name == "games" || name == "roms")
-                {
-                    continue;
-                }
-                try { Directory.Delete(subDir, true); } catch { }
+                btnUninstall.Enabled = true;
+                btnInstallDuckStationApi.Enabled = true;
+                lblStatus.Text = "";
+                UpdateDetectedStatus(selectedEmu);
+                RefreshList();
             }
         }
 
@@ -1095,6 +1116,36 @@ namespace RetroLauncher
                 }
             }
 
+            var operation = EmulatorInstallationOperation.Install;
+            string btnText = btnInstallDuckStationApi.Text;
+            if (btnText.Contains("INSTALL EMULATOR"))
+            {
+                operation = EmulatorInstallationOperation.Install;
+            }
+            else if (btnText.Contains("UPDATE EMULATOR"))
+            {
+                operation = EmulatorInstallationOperation.Update;
+            }
+            else if (btnText.Contains("REPAIR / REINSTALL"))
+            {
+                var choice = MessageBox.Show(
+                    "Do you want to Repair the installation (verifies the files and registry without downloading unless files are missing) or Reinstall (force-downloads and performs a clean installation)?\n\nClick Yes for Repair, No for Reinstall, or Cancel to abort.",
+                    "Repair or Reinstall?",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Question
+                );
+                
+                if (choice == DialogResult.Cancel)
+                {
+                    _isInstalling = false;
+                    return;
+                }
+                
+                operation = (choice == DialogResult.Yes) 
+                    ? EmulatorInstallationOperation.Repair 
+                    : EmulatorInstallationOperation.Reinstall;
+            }
+
             // Disable conflicting buttons
             btnInstallDuckStationApi.Enabled = false;
             btnSaveClose.Enabled = false;
@@ -1126,6 +1177,7 @@ namespace RetroLauncher
                 var installReq = new EmulatorInstallationRequest
                 {
                     EmulatorId = selectedEmu.Id,
+                    Operation = operation,
                     Progress = progress,
                     CancellationToken = _cts.Token
                 };
@@ -1134,8 +1186,9 @@ namespace RetroLauncher
 
                 if (installResult.Success)
                 {
-                    lblStatus.Text = "Installation complete!";
-                    MessageBox.Show($"{selectedEmu.Name} installed successfully to version {installResult.Version}!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    lblStatus.Text = "Operation complete!";
+                    string actionCompleted = operation.ToString();
+                    MessageBox.Show($"{selectedEmu.Name} operation {actionCompleted} completed successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     
                     // Reload settings
                     _config = EmulatorManager.LoadConfig();
@@ -1152,20 +1205,20 @@ namespace RetroLauncher
                 }
                 else
                 {
-                    lblStatus.Text = "Installation failed.";
+                    lblStatus.Text = "Operation failed.";
                     var ex = new Exception(installResult.ErrorMessage ?? "Deployment verification check failed.");
-                    ShowDetailedError("Installation Error", $"Failed to deploy {selectedEmu.Name}.", ex);
+                    ShowDetailedError("Operation Error", $"Failed to execute {operation} for {selectedEmu.Name}.", ex);
                 }
             }
             catch (OperationCanceledException)
             {
-                lblStatus.Text = "Installation cancelled.";
-                MessageBox.Show("Installation was cancelled.", "Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                lblStatus.Text = "Operation cancelled.";
+                MessageBox.Show("Operation was cancelled.", "Cancelled", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             catch (Exception ex)
             {
-                lblStatus.Text = "Installation failed.";
-                ShowDetailedError("Installation Failure", $"An error occurred while installing {selectedEmu.Name}.", ex);
+                lblStatus.Text = "Operation failed.";
+                ShowDetailedError("Operation Failure", $"An error occurred while executing {operation} for {selectedEmu.Name}.", ex);
             }
             finally
             {

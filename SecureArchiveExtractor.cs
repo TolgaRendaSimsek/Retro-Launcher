@@ -80,18 +80,13 @@ namespace RetroLauncher
                 };
             }
 
-            // 2. Set up staging sandbox and backup directories
-            string packageId = string.IsNullOrWhiteSpace(request.PackageId) ? "default" : request.PackageId;
+            // 2. Set up staging target directory
+            string stagingDir = Path.GetFullPath(request.DestinationPath);
+            string stagingCanonical = stagingDir + Path.DirectorySeparatorChar;
 
-            string rootTempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "install", packageId, operationId);
-            string stagingDir = Path.Combine(rootTempDir, "staging");
-            string backupDir = Path.Combine(rootTempDir, "backup");
-            string stagingCanonical = Path.GetFullPath(stagingDir) + Path.DirectorySeparatorChar;
+            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Setting up staging target: {stagingDir}");
 
-            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Setting up staging sandbox: {stagingDir}");
 
-            bool backedUp = false;
-            bool deployed = false;
 
             // 3. Extraction Timeout and Cancellation Wrapper
             int timeoutSeconds = request.TimeoutSeconds > 0 ? request.TimeoutSeconds : 300;
@@ -132,6 +127,13 @@ namespace RetroLauncher
                     {
                         activeRoot = rootDirs[0];
                         RetroLogger.Log($"Nested top-level root folder detected in archive: '{activeRoot}'");
+                        
+                        // Move files up to stagingDir to normalize
+                        string tempNormalizeDir = Path.Combine(Path.GetDirectoryName(stagingDir)!, $"normalize_{Guid.NewGuid():N}");
+                        Directory.Move(activeRoot, tempNormalizeDir);
+                        Directory.Delete(stagingDir, true);
+                        Directory.Move(tempNormalizeDir, stagingDir);
+                        activeRoot = stagingDir;
                     }
 
                     // 5. Executable discovery
@@ -237,103 +239,19 @@ namespace RetroLauncher
                         };
                     }
 
-                    // 6. Transactional Deployment to request.DestinationPath
-                    string destDir = Path.GetFullPath(request.DestinationPath);
-
-                    // Backup existing installation
-                    if (Directory.Exists(destDir))
-                    {
-                        try
-                        {
-                            if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true);
-                            Directory.Move(destDir, backupDir);
-                            backedUp = true;
-                            RetroLogger.Log($"Backed up existing installation to backup path '{backupDir}'");
-                            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Backed up existing directory to backup path '{backupDir}'");
-                        }
-                        catch (Exception ex)
-                        {
-                            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - Failed to back up existing directory: {ex.Message}");
-                            return new ArchiveExtractionResult
-                            {
-                                Success = false,
-                                FailureReason = ExtractionFailureReason.StagingCleanupFailed,
-                                ErrorMessage = $"Failed to back up existing installation directory: {ex.Message}"
-                            };
-                        }
-                    }
-
-                    // Move normalized staging files to target directory
-                    try
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(destDir)!);
-                        Directory.Move(activeRoot, destDir);
-                        deployed = true;
-                        RetroLogger.Log($"Deployed staging package content to destination '{destDir}'");
-                        EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Moved staging files to destination target folder '{destDir}'");
-                    }
-                    catch (Exception ex)
-                    {
-                        EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - Target move failed: {ex.Message}. Initiating rollback...");
-                        // Roll back immediately if target move fails
-                        if (backedUp)
-                        {
-                            try
-                            {
-                                if (Directory.Exists(destDir)) Directory.Delete(destDir, true);
-                                Directory.Move(backupDir, destDir);
-                                EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Rollback successful. Target directory restored.");
-                            }
-                            catch (Exception rollEx)
-                            {
-                                RetroLogger.Log($"CRITICAL: Rollback failed during deployment failure! {rollEx.Message}", "ERROR");
-                                EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: CRITICAL Rollback failed: {rollEx.Message}");
-                            }
-                        }
-                        return new ArchiveExtractionResult
-                        {
-                            Success = false,
-                            FailureReason = ExtractionFailureReason.ExtractionException,
-                            ErrorMessage = $"Staging deployment phase failed: {ex.Message}"
-                        };
-                    }
-
-                    // Restore configurations/saves from backup
-                    if (backedUp && Directory.Exists(backupDir))
-                    {
-                        RestoreUserFolders(backupDir, destDir);
-                        CleanDirectory(backupDir);
-                    }
-
-                    // Locate final exe path relative to target
-                    string finalExePath = "";
-                    if (matchingExePath != null)
-                    {
-                        string relativeExe = Path.GetRelativePath(activeRoot, matchingExePath);
-                        finalExePath = Path.Combine(destDir, relativeExe);
-                    }
+                    string relativeExe = Path.GetRelativePath(activeRoot, matchingExePath);
+                    string finalExePath = Path.Combine(stagingDir, relativeExe);
 
                     return new ArchiveExtractionResult
                     {
                         Success = true,
-                        ExtractedRootPath = destDir,
+                        ExtractedRootPath = stagingDir,
                         MainExecutablePath = finalExePath,
                         DiscoveredExecutables = allDiscoveredPaths
                     };
                 }
                 catch (OperationCanceledException)
                 {
-                    // Roll back if cancellation occurred during deployment
-                    if (backedUp && !deployed)
-                    {
-                        try
-                        {
-                            if (Directory.Exists(request.DestinationPath)) Directory.Delete(request.DestinationPath, true);
-                            Directory.Move(backupDir, request.DestinationPath);
-                        }
-                        catch { }
-                    }
-
                     if (request.CancellationToken.IsCancellationRequested)
                     {
                         return new ArchiveExtractionResult
@@ -355,17 +273,6 @@ namespace RetroLauncher
                 }
                 catch (Exception ex)
                 {
-                    // Roll back on general exceptions
-                    if (backedUp && !deployed)
-                    {
-                        try
-                        {
-                            if (Directory.Exists(request.DestinationPath)) Directory.Delete(request.DestinationPath, true);
-                            Directory.Move(backupDir, request.DestinationPath);
-                        }
-                        catch { }
-                    }
-
                     return new ArchiveExtractionResult
                     {
                         Success = false,
@@ -375,8 +282,9 @@ namespace RetroLauncher
                 }
                 finally
                 {
-                    // Staging and temp folder cleanup
-                    CleanDirectory(rootTempDir);
+                    // Clean up stagingDir only if extraction failed (we want stagingDir to remain on success so caller can use it!)
+                    // Wait, let's keep stagingDir intact on success, but if failure, we can delete it.
+                    // Actually, the caller (EmulatorInstallationService) will clean it up on failure or success anyway!
                 }
             }
         }
