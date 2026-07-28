@@ -39,7 +39,7 @@ namespace RetroLauncher
             if (request == null) throw new ArgumentNullException(nameof(request));
 
             // Step 1: Resolve the emulator definition
-            ReportProgress(request.Progress, request.EmulatorId, "Resolving emulator definition", 5);
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.ResolvingRelease, "Resolving GitHub release...", 5);
             var definition = _definitionProvider.GetById(request.EmulatorId);
             if (definition == null)
             {
@@ -62,7 +62,7 @@ namespace RetroLauncher
             }
 
             // Step 2: Check whether the emulator is currently running
-            ReportProgress(request.Progress, request.EmulatorId, "Checking running processes", 10);
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.ResolvingRelease, "Resolving GitHub release...", 10);
             foreach (var exeCandidate in definition.ExecutableCandidates)
             {
                 string processName = Path.GetFileNameWithoutExtension(exeCandidate);
@@ -80,7 +80,7 @@ namespace RetroLauncher
             }
 
             // Step 3: Fetch latest or specific release
-            ReportProgress(request.Progress, request.EmulatorId, "Fetching official release information", 15);
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.ResolvingRelease, "Resolving GitHub release...", 15);
             ReleaseInfo? selectedRelease = null;
 
             var query = new ReleaseQuery
@@ -114,6 +114,7 @@ namespace RetroLauncher
             }
 
             // Step 4: Select compatible asset
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.SelectingAsset, "Selecting Windows package...", 18);
             var newSelector = (IReleaseAssetSelectorNew)_assetSelector;
             var selectorResult = newSelector.SelectAsset(definition, selectedRelease);
             if (!selectorResult.Success || selectorResult.SelectedAsset == null)
@@ -123,14 +124,15 @@ namespace RetroLauncher
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.SelectingAsset,
-                    ErrorMessage = $"Could not identify a compatible Windows package for '{definition.DisplayName}': {selectorResult.Message}"
+                    ErrorMessage = "No compatible Windows x64 package was found in the latest GitHub release.",
+                    Version = selectedRelease.Tag
                 };
             }
 
             var asset = selectorResult.SelectedAsset;
 
             // Step 5: Download package to temp dir
-            ReportProgress(request.Progress, request.EmulatorId, "Downloading package archive", 20);
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.Downloading, "Downloading 0.0 MB...", 20);
             string tempDir = Path.Combine(AppContext.BaseDirectory, ApplicationSettingsService.Instance.Download.DownloadTempDir);
             if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
 
@@ -139,7 +141,16 @@ namespace RetroLauncher
             var downloadProgress = new Progress<DownloadProgress>(p =>
             {
                 int pct = 20 + (int)((p.Percentage >= 0 ? p.Percentage : 0) * 0.50);
-                ReportProgress(request.Progress, request.EmulatorId, $"Downloading: {(p.BytesDownloaded / 1024.0 / 1024.0):F1} MB", pct);
+                double downloadedMb = p.BytesDownloaded / 1024.0 / 1024.0;
+                if (p.TotalBytes.HasValue)
+                {
+                    double totalMb = p.TotalBytes.Value / 1024.0 / 1024.0;
+                    ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.Downloading, $"Downloading {downloadedMb:F1} MB / {totalMb:F1} MB...", pct);
+                }
+                else
+                {
+                    ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.Downloading, $"Downloading {downloadedMb:F1} MB...", pct);
+                }
             });
 
             var downloadReq = new DownloadRequest
@@ -155,12 +166,17 @@ namespace RetroLauncher
             var downloadResult = await _downloadManager.DownloadAsync(downloadReq);
             if (!downloadResult.Success)
             {
+                CleanFile(archivePath);
                 return new PackageInstallResult
                 {
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.Downloading,
-                    ErrorMessage = $"Download failed: {downloadResult.ErrorMessage}"
+                    ErrorMessage = $"Download failed: {downloadResult.ErrorMessage}",
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    HttpStatusCode = downloadResult.StatusCode,
+                    Version = selectedRelease.Tag
                 };
             }
 
@@ -172,11 +188,15 @@ namespace RetroLauncher
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.Downloading,
-                    ErrorMessage = "Downloaded archive file does not exist."
+                    ErrorMessage = "Downloaded archive file does not exist.",
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    Version = selectedRelease.Tag
                 };
             }
 
-            if (new FileInfo(archivePath).Length <= 0)
+            long archiveSize = new FileInfo(archivePath).Length;
+            if (archiveSize <= 0)
             {
                 CleanFile(archivePath);
                 return new PackageInstallResult
@@ -184,12 +204,15 @@ namespace RetroLauncher
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.Downloading,
-                    ErrorMessage = "Downloaded archive file is empty."
+                    ErrorMessage = "Downloaded archive file is empty.",
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    Version = selectedRelease.Tag
                 };
             }
 
             // Step 6: Validate integrity via IPackageVerifier
-            ReportProgress(request.Progress, request.EmulatorId, "Verifying downloaded archive", 75);
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.ValidatingDownload, "Validating download...", 75);
             var verifyResult = await _packageVerifier.VerifyPackageAsync(archivePath, asset.Size, asset.Sha256, request.CancellationToken);
             if (!verifyResult.Success)
             {
@@ -199,20 +222,24 @@ namespace RetroLauncher
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.ValidatingDownload,
-                    ErrorMessage = $"Package verification failed: {verifyResult.Message}"
+                    ErrorMessage = $"Package verification failed: {verifyResult.Message}",
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    DownloadedFileSize = archiveSize,
+                    Version = selectedRelease.Tag
                 };
             }
 
             string calculatedHash = verifyResult.CalculatedHash ?? "";
 
             // Step 7: Extract and Deploy (Transactional staging, backup, normalization, and rollback)
-            ReportProgress(request.Progress, request.EmulatorId, "Extracting package contents", 80);
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.Extracting, "Extracting files...", 80);
             string finalDestPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, definition.InstallDirectoryName));
 
             var extractionProgress = new Progress<ArchiveExtractionProgress>(p =>
             {
                 int pct = 80 + (int)(p.Percentage * 0.15); // Scale extraction progress to 80%-95%
-                ReportProgress(request.Progress, request.EmulatorId, "Extracting package contents", pct);
+                ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.Extracting, "Extracting files...", pct);
             });
 
             var extractionReq = new ArchiveExtractionRequest
@@ -237,10 +264,17 @@ namespace RetroLauncher
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.Extracting,
-                    ErrorMessage = $"Extraction failed: {extractionResult.ErrorMessage}"
+                    ErrorMessage = $"Extraction failed: {extractionResult.ErrorMessage}",
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    DownloadedFileSize = archiveSize,
+                    Version = selectedRelease.Tag,
+                    InstallDirectory = finalDestPath
                 };
             }
 
+            // Step 8: Locating executable
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.LocatingExecutable, "Locating executable...", 96);
             string finalExePath = extractionResult.MainExecutablePath ?? "";
             if (string.IsNullOrEmpty(finalExePath) || !File.Exists(finalExePath))
             {
@@ -249,7 +283,12 @@ namespace RetroLauncher
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.LocatingExecutable,
-                    ErrorMessage = "Located executable is missing inside deployed folder."
+                    ErrorMessage = "Located executable is missing inside deployed folder.",
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    DownloadedFileSize = archiveSize,
+                    Version = selectedRelease.Tag,
+                    InstallDirectory = finalDestPath
                 };
             }
 
@@ -264,7 +303,13 @@ namespace RetroLauncher
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.LocatingExecutable,
-                    ErrorMessage = "Deployment validation failed: executable is located outside the intended emulator directory."
+                    ErrorMessage = "Deployment validation failed: executable is located outside the intended emulator directory.",
+                    SelectedAssetName = asset.Name,
+                    ArchivePath = archivePath,
+                    DownloadedFileSize = archiveSize,
+                    Version = selectedRelease.Tag,
+                    InstallDirectory = finalDestPath,
+                    ExecutablePath = finalExePath
                 };
             }
 
@@ -277,7 +322,8 @@ namespace RetroLauncher
             }
             catch { }
 
-            // Step 10: Update registry records
+            // Step 10: Update registry records (Registering emulator)
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.Registering, "Registering emulator...", 98);
             var infoRecord = new InstalledEmulatorInfo
             {
                 EmulatorId = definition.Id,
@@ -312,7 +358,7 @@ namespace RetroLauncher
                 };
             }
 
-            ReportProgress(request.Progress, request.EmulatorId, "Installation complete", 100);
+            ReportProgress(request.Progress, request.EmulatorId, PackageInstallStage.Completed, "Installed successfully.", 100);
 
             return new PackageInstallResult
             {
@@ -321,15 +367,19 @@ namespace RetroLauncher
                 Version = installedVersion,
                 InstallDirectory = finalDestPath,
                 ExecutablePath = finalExePath,
-                FailedStage = PackageInstallStage.Completed
+                FailedStage = PackageInstallStage.Completed,
+                SelectedAssetName = asset.Name,
+                ArchivePath = archivePath,
+                DownloadedFileSize = archiveSize
             };
         }
 
-        private static void ReportProgress(IProgress<EmulatorInstallationProgress>? progress, string id, string step, int pct)
+        private static void ReportProgress(IProgress<EmulatorInstallationProgress>? progress, string id, PackageInstallStage stage, string step, int pct)
         {
             progress?.Report(new EmulatorInstallationProgress
             {
                 EmulatorId = id,
+                Stage = stage,
                 CurrentStep = step,
                 Percentage = pct
             });

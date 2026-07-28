@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -11,6 +12,9 @@ namespace RetroLauncher
     public class SetupWizardForm : Form
     {
         private int _currentStep = 1;
+        private CancellationTokenSource? _cts;
+        private bool _isInstalling = false;
+        private readonly IEmulatorPackageDefinitionProvider _definitionProvider = new JsonEmulatorPackageDefinitionProvider();
 
         // UI Panels
         private Panel _pnlHeader = null!;
@@ -104,7 +108,7 @@ namespace RetroLauncher
                 Location = new Point(20, 14),
                 FlatStyle = FlatStyle.Flat
             };
-            _btnCancel.Click += (s, e) => this.Close();
+            _btnCancel.Click += btnCancel_Click;
 
             _btnBack = new Button
             {
@@ -284,7 +288,7 @@ namespace RetroLauncher
                 _lblHeaderSubtitle.Text = "Downloading packages and extracting emulators. Do not close the window.";
                 _btnBack.Enabled = false;
                 _btnNext.Enabled = false;
-                _btnCancel.Enabled = false;
+                _btnCancel.Enabled = true;
             }
             else if (_currentStep == 3)
             {
@@ -300,6 +304,32 @@ namespace RetroLauncher
                 var settings = SettingsManager.LoadSettings();
                 settings.IsFirstRun = false;
                 SettingsManager.SaveSettings(settings);
+            }
+        }
+
+        private async void btnCancel_Click(object? sender, EventArgs e)
+        {
+            if (_isInstalling)
+            {
+                _btnCancel.Enabled = false;
+                _btnCancel.Text = "Cancelling...";
+                _lblOverallStatus.Text = "Cancelling installation and cleaning up...";
+                _cts?.Cancel();
+
+                while (_isInstalling)
+                {
+                    await Task.Delay(100);
+                }
+
+                _btnCancel.Enabled = true;
+                _btnCancel.Text = "Cancel";
+                _lblOverallStatus.Text = "Installation cancelled.";
+                _btnBack.Enabled = true;
+                _btnNext.Enabled = false;
+            }
+            else
+            {
+                this.Close();
             }
         }
 
@@ -336,6 +366,12 @@ namespace RetroLauncher
 
         private async Task StartInstallationAsync(List<EmulatorItem> emulators)
         {
+            _isInstalling = true;
+            _btnBack.Enabled = false;
+            _btnNext.Enabled = false;
+            _btnCancel.Enabled = true;
+            _btnCancel.Text = "Cancel";
+
             _pnlProgressContainer.Controls.Clear();
             _progressRows = new List<EmulatorProgressRow>();
 
@@ -345,110 +381,103 @@ namespace RetroLauncher
                 var row = new EmulatorProgressRow(emu, y);
                 _progressRows.Add(row);
                 _pnlProgressContainer.Controls.Add(row.ContainerPanel);
-                y += 50;
+                y += 55;
             }
 
             _pbOverall.Value = 0;
-            var results = new Dictionary<string, string>();
+            _lblOverallStatus.Text = "Downloading and configuring emulators...";
 
-            for (int i = 0; i < _progressRows.Count; i++)
+            _cts = new CancellationTokenSource();
+
+            var tasks = _progressRows.Select(row => InstallSingleRowAsync(row, _cts.Token)).ToList();
+            try
             {
-                var row = _progressRows[i];
-                PackageInstallResult? installResult = null;
-                int retries = 0;
-
-                while ((installResult == null || !installResult.Success) && retries < 2)
-                {
-                    installResult = await RunSingleInstallation(row);
-                    if (!installResult.Success)
-                    {
-                        retries++;
-                        if (retries < 2)
-                        {
-                            row.SetStatus("Retrying setup... (attempt 2)");
-                            await Task.Delay(2000);
-                        }
-                    }
-                }
-
-                if (installResult != null && installResult.Success)
-                {
-                    results[row.Emulator.Name] = "Installed successfully.";
-                }
-                else
-                {
-                    string errMsg = installResult?.ErrorMessage ?? "Unknown error";
-                    results[row.Emulator.Name] = $"Installation failed: {errMsg}";
-                    row.ShowRetryButton(async () =>
-                    {
-                        row.HideRetryButton();
-                        row.SetStatus("Restarting installation...");
-                        var retriedResult = await RunSingleInstallation(row);
-                        if (retriedResult.Success)
-                        {
-                            results[row.Emulator.Name] = "Installed successfully.";
-                            CheckIfAllDoneAndTransition(results);
-                        }
-                        else
-                        {
-                            string retriedErrMsg = retriedResult.ErrorMessage ?? "Unknown error";
-                            results[row.Emulator.Name] = $"Installation failed: {retriedErrMsg}";
-                            row.ShowRetryButton(null);
-                        }
-                    });
-                }
-
-                _pbOverall.Value = (int)(((double)(i + 1) / _progressRows.Count) * 100);
+                await Task.WhenAll(tasks);
+            }
+            catch (Exception)
+            {
+                // Handled in individual task logic
             }
 
-            CheckIfAllDoneAndTransition(results);
+            CheckOverallStatusAndTransition();
         }
 
-        private void CheckIfAllDoneAndTransition(Dictionary<string, string> results)
+        private async Task<PackageInstallResult> InstallSingleRowAsync(EmulatorProgressRow row, CancellationToken token)
         {
-            // If any rows still have visible retry buttons, wait for manual retries
-            bool hasActiveRetries = _progressRows.Any(r => r.IsRetryButtonVisible);
-            if (!hasActiveRetries)
+            var service = new EmulatorInstallationService();
+            var progress = new Progress<EmulatorInstallationProgress>(p =>
             {
-                BuildSummary(results);
-                LoadStep(3);
-            }
-        }
-
-        private async Task<PackageInstallResult> RunSingleInstallation(EmulatorProgressRow row)
-        {
-            row.HideRetryButton();
-            var progress = new Progress<int>(percent =>
-            {
-                row.SetProgress(percent);
-                if (percent < 90)
-                    row.SetStatus($"Downloading... ({percent}%)");
-                else if (percent < 100)
-                    row.SetStatus("Extracting files...");
-                else
-                    row.SetStatus("Completed");
+                if (this.IsDisposed) return;
+                this.BeginInvoke(new Action(() =>
+                {
+                    row.SetProgress(p.Percentage);
+                    row.SetStatus(p.CurrentStep);
+                    UpdateOverallProgress();
+                }));
             });
+
+            var req = new EmulatorInstallationRequest
+            {
+                EmulatorId = row.Emulator.Id,
+                Progress = progress,
+                CancellationToken = token
+            };
 
             try
             {
-                var result = await EmulatorManager.Instance.InstallEmulator(row.Emulator.Id, progress);
-                if (result.Success)
+                var result = await service.InstallAsync(req);
+                if (this.IsDisposed) return result;
+
+                this.Invoke(new Action(() =>
                 {
-                    row.SetStatus("Completed");
-                    row.SetProgress(100);
-                }
-                else
-                {
-                    row.SetProgress(0);
-                    row.SetStatus($"Failed at {result.FailedStage}: {result.ErrorMessage}");
-                }
+                    row.SetLastResult(result);
+                    if (result.Success)
+                    {
+                        row.SetStatus("Installed successfully.");
+                        row.SetProgress(100);
+                        row.HideRetryButton();
+                        row.HideDetailsButton();
+                    }
+                    else
+                    {
+                        row.SetProgress(0);
+                        row.SetStatus("Failed");
+                        row.SetLastFailedStage(result.FailedStage);
+                        row.ShowRetryAndDetailsButtons(
+                            retryAction: () => RetryRow(row),
+                            detailsAction: () => ShowDetails(row)
+                        );
+                    }
+                    UpdateOverallProgress();
+                }));
                 return result;
+            }
+            catch (OperationCanceledException)
+            {
+                if (this.IsDisposed) throw;
+                var cancelResult = new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = row.Emulator.Id,
+                    FailedStage = PackageInstallStage.Downloading,
+                    ErrorMessage = "Installation cancelled by user.",
+                    Exception = new OperationCanceledException()
+                };
+                this.Invoke(new Action(() =>
+                {
+                    row.SetLastResult(cancelResult);
+                    row.SetProgress(0);
+                    row.SetStatus("Cancelled");
+                    row.HideRetryButton();
+                    row.HideDetailsButton();
+                    UpdateOverallProgress();
+                }));
+                throw;
             }
             catch (Exception ex)
             {
-                row.SetProgress(0);
-                row.SetStatus($"Failed: {ex.Message}");
-                return new PackageInstallResult
+                if (this.IsDisposed) throw;
+                var failResult = new PackageInstallResult
                 {
                     Success = false,
                     PackageId = row.Emulator.Id,
@@ -456,6 +485,151 @@ namespace RetroLauncher
                     ErrorMessage = ex.Message,
                     Exception = ex
                 };
+                this.Invoke(new Action(() =>
+                {
+                    row.SetLastResult(failResult);
+                    row.SetProgress(0);
+                    row.SetStatus("Failed");
+                    row.ShowRetryAndDetailsButtons(
+                        retryAction: () => RetryRow(row),
+                        detailsAction: () => ShowDetails(row)
+                    );
+                    UpdateOverallProgress();
+                }));
+                return failResult;
+            }
+        }
+
+        private async void RetryRow(EmulatorProgressRow row)
+        {
+            _btnBack.Enabled = false;
+            _btnNext.Enabled = false;
+            _btnCancel.Enabled = true;
+
+            row.HideRetryButton();
+            row.HideDetailsButton();
+            row.SetStatus("Queued");
+
+            if (_cts == null || _cts.IsCancellationRequested)
+            {
+                _cts = new CancellationTokenSource();
+            }
+
+            _isInstalling = true;
+
+            try
+            {
+                await InstallSingleRowAsync(row, _cts.Token);
+            }
+            catch (Exception)
+            {
+                // Handled in InstallSingleRowAsync
+            }
+
+            CheckOverallStatusAndTransition();
+        }
+
+        private void ShowDetails(EmulatorProgressRow row)
+        {
+            var res = row.LastResult;
+            string emulatorName = row.Emulator.Name;
+            string repository = "";
+            string releaseVersion = "Unknown";
+            string assetName = "None";
+            string httpStatus = "N/A";
+            string fileSize = "Unknown";
+            string archivePath = "N/A";
+            string destPath = "N/A";
+            string failedStage = "N/A";
+            string exceptionMsg = "";
+            string logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "package_manager.log");
+
+            var definition = _definitionProvider.GetById(row.Emulator.Id);
+            if (definition != null)
+            {
+                repository = $"{definition.GitHubOwner}/{definition.GitHubRepository}";
+                destPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, definition.InstallDirectoryName));
+            }
+
+            if (res != null)
+            {
+                releaseVersion = res.Version ?? "Unknown";
+                assetName = res.SelectedAssetName ?? "None";
+                if (res.HttpStatusCode.HasValue)
+                {
+                    httpStatus = $"{(int)res.HttpStatusCode.Value} ({res.HttpStatusCode.Value})";
+                }
+                if (res.DownloadedFileSize.HasValue)
+                {
+                    double mb = (double)res.DownloadedFileSize.Value / (1024 * 1024);
+                    fileSize = $"{mb:F2} MB ({res.DownloadedFileSize.Value} bytes)";
+                }
+                archivePath = res.ArchivePath ?? "N/A";
+                failedStage = res.FailedStage.ToString();
+                exceptionMsg = res.ErrorMessage ?? "";
+                if (res.Exception != null)
+                {
+                    exceptionMsg += Environment.NewLine + res.Exception.ToString();
+                }
+            }
+            else
+            {
+                failedStage = row.LastFailedStage.ToString();
+                exceptionMsg = "Installation failed before result was recorded.";
+            }
+
+            using (var detailsForm = new InstallationDetailsForm(
+                emulatorName, repository, releaseVersion, assetName, httpStatus, 
+                fileSize, archivePath, destPath, failedStage, exceptionMsg, logFilePath))
+            {
+                detailsForm.ShowDialog(this);
+            }
+        }
+
+        private void UpdateOverallProgress()
+        {
+            if (this.IsDisposed) return;
+            if (_progressRows == null || !_progressRows.Any()) return;
+
+            int sum = _progressRows.Sum(r => r.Percentage);
+            _pbOverall.Value = Math.Min(100, Math.Max(0, sum / _progressRows.Count));
+        }
+
+        private void CheckOverallStatusAndTransition()
+        {
+            bool hasActive = _progressRows.Any(r => r.Percentage > 0 && r.Percentage < 100 && !r.IsRetryButtonVisible && r.CurrentStatus != "Cancelled");
+            bool hasFailed = _progressRows.Any(r => r.IsRetryButtonVisible);
+            bool allSuccess = _progressRows.All(r => r.Percentage == 100);
+
+            if (allSuccess)
+            {
+                _isInstalling = false;
+                var results = _progressRows.ToDictionary(r => r.Emulator.Name, r => "Installed successfully.");
+                BuildSummary(results);
+                LoadStep(3);
+            }
+            else if (!hasActive)
+            {
+                _isInstalling = false;
+                _btnBack.Enabled = true;
+                _btnNext.Enabled = false;
+                _btnCancel.Enabled = true;
+                _btnCancel.Text = "Cancel";
+
+                if (hasFailed)
+                {
+                    _lblOverallStatus.Text = "Some installations failed. Please retry or go back.";
+                }
+                else
+                {
+                    _lblOverallStatus.Text = "Installation stopped.";
+                }
+            }
+            else
+            {
+                _btnBack.Enabled = false;
+                _btnNext.Enabled = false;
+                _btnCancel.Enabled = true;
             }
         }
 
@@ -467,7 +641,7 @@ namespace RetroLauncher
             foreach (var kvp in results)
             {
                 _lstSummary.Items.Add($"• {kvp.Key}: {kvp.Value}");
-                if (kvp.Value.Contains("failed")) allOk = false;
+                if (kvp.Value.Contains("failed") || kvp.Value.Contains("Failed")) allOk = false;
             }
 
             if (allOk)
@@ -579,9 +753,16 @@ namespace RetroLauncher
             private Label _lblStatus;
             private ProgressBar _pbItem;
             private Button _btnRetry;
+            private Button _btnDetails;
             private Action? _retryAction;
+            private Action? _detailsAction;
 
             public bool IsRetryButtonVisible => _btnRetry.Visible;
+            public bool IsDetailsButtonVisible => _btnDetails.Visible;
+            public string CurrentStatus => _lblStatus.Text;
+            public PackageInstallResult? LastResult { get; private set; }
+            public PackageInstallStage LastFailedStage { get; private set; }
+            public int Percentage => _pbItem.Value;
 
             public EmulatorProgressRow(EmulatorItem emu, int yPosition)
             {
@@ -590,7 +771,7 @@ namespace RetroLauncher
                 ContainerPanel = new Panel
                 {
                     Location = new Point(0, yPosition),
-                    Size = new Size(560, 45),
+                    Size = new Size(580, 50),
                     BackColor = Color.FromArgb(24, 24, 28)
                 };
 
@@ -599,8 +780,8 @@ namespace RetroLauncher
                     Text = emu.Name,
                     Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                     ForeColor = Color.White,
-                    Location = new Point(10, 12),
-                    Size = new Size(120, 20)
+                    Location = new Point(10, 15),
+                    Size = new Size(110, 20)
                 };
 
                 _lblStatus = new Label
@@ -608,30 +789,42 @@ namespace RetroLauncher
                     Text = "Queued",
                     Font = new Font("Segoe UI", 8.5F),
                     ForeColor = Color.FromArgb(156, 163, 175),
-                    Location = new Point(140, 14),
+                    Location = new Point(125, 17),
                     Size = new Size(160, 20)
                 };
 
                 _pbItem = new ProgressBar
                 {
-                    Location = new Point(310, 12),
-                    Size = new Size(160, 18),
+                    Location = new Point(290, 15),
+                    Size = new Size(130, 18),
                     Style = ProgressBarStyle.Continuous
                 };
 
                 _btnRetry = new Button
                 {
                     Text = "Retry",
-                    Size = new Size(60, 22),
-                    Location = new Point(485, 10),
+                    Size = new Size(65, 24),
+                    Location = new Point(430, 13),
                     FlatStyle = FlatStyle.Flat,
-                    BackColor = Color.FromArgb(239, 68, 68),
+                    BackColor = Color.FromArgb(16, 185, 129),
                     ForeColor = Color.White,
                     Visible = false
                 };
                 _btnRetry.Click += (s, e) => _retryAction?.Invoke();
 
-                ContainerPanel.Controls.AddRange(new Control[] { _lblName, _lblStatus, _pbItem, _btnRetry });
+                _btnDetails = new Button
+                {
+                    Text = "Details",
+                    Size = new Size(65, 24),
+                    Location = new Point(505, 13),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(31, 41, 55),
+                    ForeColor = Color.White,
+                    Visible = false
+                };
+                _btnDetails.Click += (s, e) => _detailsAction?.Invoke();
+
+                ContainerPanel.Controls.AddRange(new Control[] { _lblName, _lblStatus, _pbItem, _btnRetry, _btnDetails });
             }
 
             public void SetProgress(int percent)
@@ -644,10 +837,22 @@ namespace RetroLauncher
                 _lblStatus.Text = msg;
             }
 
-            public void ShowRetryButton(Action? retryAction)
+            public void SetLastResult(PackageInstallResult result)
+            {
+                LastResult = result;
+            }
+
+            public void SetLastFailedStage(PackageInstallStage stage)
+            {
+                LastFailedStage = stage;
+            }
+
+            public void ShowRetryAndDetailsButtons(Action retryAction, Action detailsAction)
             {
                 _retryAction = retryAction;
+                _detailsAction = detailsAction;
                 _btnRetry.Visible = true;
+                _btnDetails.Visible = true;
                 _lblStatus.ForeColor = Color.FromArgb(239, 68, 68); // Red
             }
 
@@ -656,6 +861,84 @@ namespace RetroLauncher
                 _btnRetry.Visible = false;
                 _lblStatus.ForeColor = Color.FromArgb(156, 163, 175);
             }
+
+            public void HideDetailsButton()
+            {
+                _btnDetails.Visible = false;
+            }
+        }
+    }
+
+    public class InstallationDetailsForm : Form
+    {
+        public InstallationDetailsForm(string emulatorName, string repository, string releaseVersion, 
+            string assetName, string httpStatus, string fileSize, string archivePath, 
+            string destPath, string failedStage, string exceptionMsg, string logFilePath)
+        {
+            this.Text = $"{emulatorName} - Installation Failure Details";
+            this.Size = new Size(550, 480);
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.BackColor = Color.FromArgb(24, 24, 28);
+            this.ForeColor = Color.White;
+
+            Label lblTitle = new Label
+            {
+                Text = "Diagnostic Details",
+                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                Location = new Point(15, 15),
+                Size = new Size(300, 25),
+                ForeColor = Color.FromArgb(239, 68, 68)
+            };
+            this.Controls.Add(lblTitle);
+
+            TextBox txtDetails = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                Font = new Font("Consolas", 9F),
+                BackColor = Color.FromArgb(31, 41, 55),
+                ForeColor = Color.White,
+                Location = new Point(15, 50),
+                Size = new Size(500, 320),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"Emulator Name:    {emulatorName}");
+            sb.AppendLine($"Repository:       {repository}");
+            sb.AppendLine($"Release Version:  {releaseVersion}");
+            sb.AppendLine($"Asset Name:       {assetName}");
+            sb.AppendLine($"HTTP Status:      {httpStatus}");
+            sb.AppendLine($"Downloaded Size:  {fileSize}");
+            sb.AppendLine($"Archive Path:     {archivePath}");
+            sb.AppendLine($"Destination Path: {destPath}");
+            sb.AppendLine($"Failed Stage:     {failedStage}");
+            sb.AppendLine($"Log File Path:    {logFilePath}");
+            sb.AppendLine();
+            sb.AppendLine("Exception Message:");
+            sb.AppendLine("------------------");
+            sb.AppendLine(exceptionMsg);
+
+            txtDetails.Text = sb.ToString();
+            txtDetails.SelectionLength = 0;
+            this.Controls.Add(txtDetails);
+
+            Button btnClose = new Button
+            {
+                Text = "Close",
+                DialogResult = DialogResult.OK,
+                Size = new Size(95, 30),
+                Location = new Point(420, 390),
+                FlatStyle = FlatStyle.Flat
+            };
+            this.Controls.Add(btnClose);
+            this.AcceptButton = btnClose;
+
+            ThemeManager.Instance.ApplyTheme(this);
         }
     }
 }

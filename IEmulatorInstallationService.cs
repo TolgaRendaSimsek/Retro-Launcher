@@ -24,6 +24,7 @@ namespace RetroLauncher
     public class EmulatorInstallationProgress
     {
         public string EmulatorId { get; set; } = "";
+        public PackageInstallStage Stage { get; set; }
         public string CurrentStep { get; set; } = "";
         public int Percentage { get; set; }
     }

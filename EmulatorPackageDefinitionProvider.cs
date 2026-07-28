@@ -67,9 +67,12 @@ namespace RetroLauncher
                                     RetroLogger.Log($"Validation failed for emulator '{def.Id ?? "unknown"}' in {_filePath}: {valEx.Message}", "WARNING");
                                 }
                             }
-                            _definitions.Clear();
-                            _definitions.AddRange(verifiedList);
-                            loadedFromFile = true;
+                            if (verifiedList.Count > 0)
+                            {
+                                _definitions.Clear();
+                                _definitions.AddRange(verifiedList);
+                                loadedFromFile = true;
+                            }
                         }
                     }
                     catch (Exception fileEx)
@@ -266,6 +269,7 @@ namespace RetroLauncher
                     LaunchArgumentsTemplate = "-fullscreen \"{rom}\"",
                     RequiresBios = true,
                     BiosDirectoryCandidates = new List<string> { "bios" },
+                    ReleaseChannel = EmulatorReleaseChannel.Dev,
 
                     // UI Compatibility fields
                     SupportedRomExtensions = new List<string> { ".iso", ".bin", ".elf", ".chd", ".cso" },

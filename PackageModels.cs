@@ -94,5 +94,9 @@ namespace RetroLauncher
         public string? ErrorCode { get; init; }
         public string? ErrorMessage { get; init; }
         public Exception? Exception { get; init; }
+        public string? SelectedAssetName { get; init; }
+        public string? ArchivePath { get; init; }
+        public long? DownloadedFileSize { get; init; }
+        public System.Net.HttpStatusCode? HttpStatusCode { get; init; }
     }
 }
