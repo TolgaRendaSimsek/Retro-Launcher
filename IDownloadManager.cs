@@ -37,6 +37,7 @@ namespace RetroLauncher
     public class DownloadRequest
     {
         public string EmulatorId { get; set; } = "";
+        public string OperationId { get; set; } = "";
         public string Url { get; set; } = "";
         public string DestinationPath { get; set; } = "";
         public long? ExpectedSize { get; set; }

@@ -419,6 +419,7 @@ namespace RetroLauncher
             var req = new EmulatorInstallationRequest
             {
                 EmulatorId = row.Emulator.Id,
+                OperationId = row.OperationId,
                 Progress = progress,
                 CancellationToken = token
             };
@@ -542,7 +543,7 @@ namespace RetroLauncher
             string destPath = "N/A";
             string failedStage = "N/A";
             string exceptionMsg = "";
-            string logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "package_manager.log");
+            string logFilePath = EmulatorInstallDiagnosticsLogger.GetLogFilePath(row.OperationId);
 
             var definition = _definitionProvider.GetById(row.Emulator.Id);
             if (definition != null)
@@ -748,6 +749,7 @@ namespace RetroLauncher
         private class EmulatorProgressRow
         {
             public EmulatorItem Emulator { get; }
+            public string OperationId { get; } = Guid.NewGuid().ToString("N");
             public Panel ContainerPanel { get; }
             private Label _lblName;
             private Label _lblStatus;
@@ -926,6 +928,37 @@ namespace RetroLauncher
             txtDetails.Text = sb.ToString();
             txtDetails.SelectionLength = 0;
             this.Controls.Add(txtDetails);
+
+            Button btnOpenLog = new Button
+            {
+                Text = "Open log",
+                Size = new Size(95, 30),
+                Location = new Point(315, 390),
+                FlatStyle = FlatStyle.Flat
+            };
+            btnOpenLog.Click += (s, e) =>
+            {
+                try
+                {
+                    if (File.Exists(logFilePath))
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = logFilePath,
+                            UseShellExecute = true
+                        });
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Log file does not exist yet at:\n\n{logFilePath}", "Log Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to open log file automatically.\n\nPath:\n{logFilePath}\n\nError:\n{ex.Message}", "Failed to Open Log", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            this.Controls.Add(btnOpenLog);
 
             Button btnClose = new Button
             {

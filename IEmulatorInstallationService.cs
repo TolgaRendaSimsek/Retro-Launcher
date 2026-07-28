@@ -50,6 +50,7 @@ namespace RetroLauncher
     public class EmulatorInstallationRequest
     {
         public string EmulatorId { get; set; } = "";
+        public string OperationId { get; set; } = Guid.NewGuid().ToString("N");
         public string? TargetReleaseTag { get; set; } // Null triggers latest release
         public IProgress<EmulatorInstallationProgress>? Progress { get; set; }
         public CancellationToken CancellationToken { get; set; }

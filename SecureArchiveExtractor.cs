@@ -21,9 +21,14 @@ namespace RetroLauncher
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
 
+            string operationId = string.IsNullOrWhiteSpace(request.OperationId) ? Guid.NewGuid().ToString("N") : request.OperationId;
+            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Initializing extraction of archive: {request.ArchivePath}");
+            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Intended destination path: {request.DestinationPath}");
+
             // 1. Pre-Extraction Archive Validation
             if (!File.Exists(request.ArchivePath))
             {
+                EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - Archive file not found.");
                 return new ArchiveExtractionResult
                 {
                     Success = false,
@@ -35,6 +40,7 @@ namespace RetroLauncher
             var fileInfo = new FileInfo(request.ArchivePath);
             if (fileInfo.Length <= 0)
             {
+                EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - Archive file is empty.");
                 return new ArchiveExtractionResult
                 {
                     Success = false,
@@ -48,6 +54,7 @@ namespace RetroLauncher
             {
                 if (fileInfo.Length != request.ExpectedSize.Value)
                 {
+                    EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - File size mismatch. Size on disk: {fileInfo.Length}, expected: {request.ExpectedSize.Value}");
                     return new ArchiveExtractionResult
                     {
                         Success = false,
@@ -59,10 +66,12 @@ namespace RetroLauncher
 
             string extension = Path.GetExtension(request.ArchivePath).ToLower();
             string archiveType = (extension == ".7z") ? "7z" : "zip";
+            EmulatorInstallDiagnosticsLogger.SetArchiveType(operationId, archiveType);
 
             // Verify signature
             if (!ValidateArchiveSignature(request.ArchivePath, archiveType))
             {
+                EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - Invalid magic signature for archive type {archiveType}");
                 return new ArchiveExtractionResult
                 {
                     Success = false,
@@ -73,12 +82,13 @@ namespace RetroLauncher
 
             // 2. Set up staging sandbox and backup directories
             string packageId = string.IsNullOrWhiteSpace(request.PackageId) ? "default" : request.PackageId;
-            string operationId = string.IsNullOrWhiteSpace(request.OperationId) ? Guid.NewGuid().ToString("N") : request.OperationId;
 
             string rootTempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "install", packageId, operationId);
             string stagingDir = Path.Combine(rootTempDir, "staging");
             string backupDir = Path.Combine(rootTempDir, "backup");
             string stagingCanonical = Path.GetFullPath(stagingDir) + Path.DirectorySeparatorChar;
+
+            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Setting up staging sandbox: {stagingDir}");
 
             bool backedUp = false;
             bool deployed = false;
@@ -109,6 +119,7 @@ namespace RetroLauncher
 
                     if (!extractResult.Success)
                     {
+                        EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Core extraction failed: {extractResult.ErrorMessage}");
                         return extractResult;
                     }
 
@@ -202,6 +213,13 @@ namespace RetroLauncher
                             .First();
                         
                         matchingExePath = best.FullPath;
+                        EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Selected executable '{best.RelativePath}' with score {best.Score}");
+                    }
+
+                    // Set discovered executables in diagnostics log
+                    if (allDiscoveredPaths.Any())
+                    {
+                        EmulatorInstallDiagnosticsLogger.SetDiscoveredExecutables(operationId, allDiscoveredPaths);
                     }
 
                     if (matchingExePath == null)
@@ -209,11 +227,13 @@ namespace RetroLauncher
                         string discoveredList = allDiscoveredPaths.Any() 
                             ? string.Join(", ", allDiscoveredPaths) 
                             : "none";
+                        EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - No matching executable discovered. Discovered: {discoveredList}");
                         return new ArchiveExtractionResult
                         {
                             Success = false,
                             FailureReason = ExtractionFailureReason.NoExecutableFound,
-                            ErrorMessage = $"No matching emulator executable was found in the extracted package. Discovered executables: {discoveredList}"
+                            ErrorMessage = $"No matching emulator executable was found in the extracted package. Discovered executables: {discoveredList}",
+                            DiscoveredExecutables = allDiscoveredPaths
                         };
                     }
 
@@ -229,9 +249,11 @@ namespace RetroLauncher
                             Directory.Move(destDir, backupDir);
                             backedUp = true;
                             RetroLogger.Log($"Backed up existing installation to backup path '{backupDir}'");
+                            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Backed up existing directory to backup path '{backupDir}'");
                         }
                         catch (Exception ex)
                         {
+                            EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - Failed to back up existing directory: {ex.Message}");
                             return new ArchiveExtractionResult
                             {
                                 Success = false,
@@ -248,9 +270,11 @@ namespace RetroLauncher
                         Directory.Move(activeRoot, destDir);
                         deployed = true;
                         RetroLogger.Log($"Deployed staging package content to destination '{destDir}'");
+                        EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Moved staging files to destination target folder '{destDir}'");
                     }
                     catch (Exception ex)
                     {
+                        EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Error - Target move failed: {ex.Message}. Initiating rollback...");
                         // Roll back immediately if target move fails
                         if (backedUp)
                         {
@@ -258,10 +282,12 @@ namespace RetroLauncher
                             {
                                 if (Directory.Exists(destDir)) Directory.Delete(destDir, true);
                                 Directory.Move(backupDir, destDir);
+                                EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: Rollback successful. Target directory restored.");
                             }
                             catch (Exception rollEx)
                             {
                                 RetroLogger.Log($"CRITICAL: Rollback failed during deployment failure! {rollEx.Message}", "ERROR");
+                                EmulatorInstallDiagnosticsLogger.LogToSession(operationId, $"Extractor: CRITICAL Rollback failed: {rollEx.Message}");
                             }
                         }
                         return new ArchiveExtractionResult
@@ -291,7 +317,8 @@ namespace RetroLauncher
                     {
                         Success = true,
                         ExtractedRootPath = destDir,
-                        MainExecutablePath = finalExePath
+                        MainExecutablePath = finalExePath,
+                        DiscoveredExecutables = allDiscoveredPaths
                     };
                 }
                 catch (OperationCanceledException)

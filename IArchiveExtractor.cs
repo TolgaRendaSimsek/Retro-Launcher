@@ -59,6 +59,7 @@ namespace RetroLauncher
         public bool Success { get; set; }
         public string? ExtractedRootPath { get; set; } // The staging sub-folder if single nested, or staging root itself
         public string? MainExecutablePath { get; set; } // Path to executable relative to the staging folder or absolute
+        public List<string> DiscoveredExecutables { get; set; } = new List<string>();
         public ExtractionFailureReason FailureReason { get; set; }
         public string? ErrorMessage { get; set; }
     }

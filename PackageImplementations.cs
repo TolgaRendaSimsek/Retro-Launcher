@@ -169,6 +169,10 @@ namespace RetroLauncher
             if (File.Exists(partFilePath)) File.Delete(partFilePath);
             if (File.Exists(finalFilePath)) File.Delete(finalFilePath);
 
+            EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Initializing download of '{assetName}'");
+            EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Target URL: {url}");
+            EmulatorInstallDiagnosticsLogger.SetTemporaryFilePath(opId, partFilePath);
+
             int maxRetries = 3;
             int attempt = 0;
             TimeSpan delay = TimeSpan.FromMilliseconds(_retryDelayMs);
@@ -186,6 +190,8 @@ namespace RetroLauncher
                         SpeedBytesPerSecond = 0,
                         CurrentStage = attempt > 1 ? $"Retrying Download (Attempt {attempt}/{maxRetries + 1})" : "Connecting"
                     });
+
+                    EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Sending request (attempt {attempt}/{maxRetries + 1})...");
 
                     // Prepare HttpClient and request timeout
                     var client = _httpClient ?? _clientProvider.GetClient("PackageDownloads");
@@ -208,6 +214,9 @@ namespace RetroLauncher
 
                         using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token))
                         {
+                            EmulatorInstallDiagnosticsLogger.SetHttpStatusCode(opId, (int)response.StatusCode);
+                            EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Received status code {response.StatusCode} ({(int)response.StatusCode})");
+
                             // 1. Validate HTTP Status Code
                             if (response.StatusCode == HttpStatusCode.NotFound)
                             {
@@ -240,6 +249,11 @@ namespace RetroLauncher
 
                             // Read Content-Length
                             long? totalBytes = response.Content.Headers.ContentLength;
+                            if (totalBytes.HasValue)
+                            {
+                                EmulatorInstallDiagnosticsLogger.SetExpectedSize(opId, totalBytes.Value);
+                                EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Expected Content-Length: {totalBytes.Value} bytes");
+                            }
 
                             using (var contentStream = await response.Content.ReadAsStreamAsync(linkedCts.Token))
                             using (var fileStream = new FileStream(partFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
@@ -282,6 +296,9 @@ namespace RetroLauncher
                                         lastReportRead = totalRead;
                                     }
                                 }
+                                
+                                EmulatorInstallDiagnosticsLogger.SetDownloadedSize(opId, totalRead);
+                                EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Read complete. Downloaded {totalRead} bytes.");
                             }
 
                             // 4. Validate non-zero file size and matching Content-Length
@@ -303,18 +320,20 @@ namespace RetroLauncher
 
                             // Success: Rename part to final target file
                             File.Move(partFilePath, finalFilePath);
+                            EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Rename successful. Final file at: {finalFilePath}");
                             return finalFilePath;
                         }
                     }
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
-                    // Clean up partial files
+                    EmulatorInstallDiagnosticsLogger.LogToSession(opId, "Downloader: Download cancelled by user.");
                     CleanFile(partFilePath);
                     throw;
                 }
                 catch (Exception ex)
                 {
+                    EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Exception encountered: {ex.GetType().Name} - {ex.Message}");
                     CleanFile(partFilePath);
 
                     // Re-throw if error is fatal (404, invalid signatures, or we exceeded retry budget)
@@ -323,6 +342,7 @@ namespace RetroLauncher
 
                     if (isFatal || attempt > maxRetries)
                     {
+                        EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Fatal error or max retries exceeded. Throwing...");
                         throw;
                     }
 
@@ -330,6 +350,7 @@ namespace RetroLauncher
                     var jitter = new Random();
                     TimeSpan backoff = delay.Add(TimeSpan.FromMilliseconds(jitter.Next(0, 300)));
                     RetroLogger.Log($"Download transient error (attempt {attempt}/{maxRetries + 1}): {ex.Message}. Retrying in {backoff.TotalSeconds:F1}s...", "WARNING");
+                    EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Downloader: Transient error. Retrying in {backoff.TotalSeconds:F1}s...");
                     
                     await Task.Delay(backoff, token);
                     delay = TimeSpan.FromTicks(delay.Ticks * 2);
