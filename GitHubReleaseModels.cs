@@ -66,5 +66,6 @@ namespace RetroLauncher
         public string? ErrorMessage { get; set; }
         public System.Net.HttpStatusCode? StatusCode { get; set; }
         public GitHubRateLimitInfo? RateLimit { get; set; }
+        public string? ETag { get; set; }
     }
 }

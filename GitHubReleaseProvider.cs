@@ -16,6 +16,7 @@ namespace RetroLauncher
         private readonly IApiResponseCache _cache;
         private readonly IRateLimitCoordinator _rateLimitCoordinator;
         private readonly IApplicationSettingsService _settings;
+        private readonly IGitHubReleaseClient _gitHubReleaseClient;
 
         public GitHubReleaseProvider(
             IHttpClientProvider? clientProvider = null,
@@ -27,17 +28,147 @@ namespace RetroLauncher
             _cache = cache ?? new FileApiResponseCache();
             _rateLimitCoordinator = rateLimitCoordinator ?? RateLimitCoordinator.Instance;
             _settings = settings ?? ApplicationSettingsService.Instance;
+            _gitHubReleaseClient = new GitHubReleaseClient(_clientProvider);
         }
 
         public async Task<OperationResult<ReleaseInfo>> GetLatestReleaseAsync(ReleaseQuery query, CancellationToken cancellationToken)
         {
-            string relativeUri = $"/repos/{query.Owner}/{query.Repository}/releases/latest";
-            return await ExecuteRequestAsync(relativeUri, json =>
+            var cacheKey = new ApiCacheKey($"/repos/{query.Owner}/{query.Repository}/releases/latest", ReleaseProviderType.GitHub);
+            ApiCacheEntry? cachedEntry = null;
+
+            try
             {
-                var dto = JsonSerializer.Deserialize<GitHubReleaseDto>(json);
-                if (dto == null) throw new JsonException("Deserialization returned null.");
-                return MapRelease(dto, query.Owner, query.Repository);
-            }, cancellationToken);
+                var cacheResult = await _cache.GetAsync(cacheKey);
+                cachedEntry = (cacheResult.Status == CacheFreshness.Fresh || cacheResult.Status == CacheFreshness.Stale) ? cacheResult.Entry : null;
+            }
+            catch (Exception ex)
+            {
+                RetroLogger.Log($"Cache read failure: {ex.Message}", "WARNING");
+            }
+
+            int maxRetries = _settings.Network.MaxRetryCount;
+            int attempt = 0;
+            TimeSpan delay = TimeSpan.FromSeconds(1);
+
+            while (true)
+            {
+                attempt++;
+                try
+                {
+                    await _rateLimitCoordinator.WaitIfNeededAsync(cancellationToken);
+
+                    string? etag = cachedEntry?.ETag;
+                    var clientResult = await _gitHubReleaseClient.GetLatestReleaseAsync(query.Owner, query.Repository, etag, cancellationToken);
+
+                    if (clientResult.RateLimit != null)
+                    {
+                        _rateLimitCoordinator.UpdateState(
+                            clientResult.RateLimit.Limit,
+                            clientResult.RateLimit.Remaining,
+                            clientResult.RateLimit.ResetTime);
+                    }
+
+                    if (clientResult.StatusCode == HttpStatusCode.NotModified)
+                    {
+                        if (cachedEntry != null)
+                        {
+                            RetroLogger.Log($"GitHub conditional validation hit (304 Not Modified) for latest release.", "INFO");
+                            cachedEntry.ExpiresAt = DateTime.UtcNow.AddMinutes(_settings.Cache.CacheDurationMinutes);
+                            await _cache.SetAsync(cacheKey, cachedEntry);
+
+                            var cachedRelease = JsonSerializer.Deserialize<GitHubRelease>(cachedEntry.ResponseBody);
+                            if (cachedRelease != null)
+                            {
+                                var mapped = MapRelease(cachedRelease, query.Owner, query.Repository);
+                                var okResult = OperationResult<ReleaseInfo>.Ok(mapped, isFromCache: true);
+                                // Set validation flag
+                                typeof(OperationResult<ReleaseInfo>).GetProperty("IsValidatedFromCache")?.SetValue(okResult, true);
+                                return okResult;
+                            }
+                        }
+                        else
+                        {
+                            // Stale cache body is missing, retry without etag
+                            cachedEntry = null;
+                            continue;
+                        }
+                    }
+
+                    if (clientResult.Success && clientResult.Data != null)
+                    {
+                        var release = clientResult.Data;
+                        var mapped = MapRelease(release, query.Owner, query.Repository);
+
+                        // Save to cache
+                        string responseBody = JsonSerializer.Serialize(release);
+                        var entry = new ApiCacheEntry
+                        {
+                            ResponseBody = responseBody,
+                            ETag = clientResult.ETag,
+                            StoredAt = DateTime.UtcNow,
+                            ExpiresAt = DateTime.UtcNow.AddMinutes(_settings.Cache.CacheDurationMinutes)
+                        };
+                        await _cache.SetAsync(cacheKey, entry);
+
+                        return OperationResult<ReleaseInfo>.Ok(mapped);
+                    }
+
+                    // Check if rate limit or transient
+                    bool isRateLimit = clientResult.StatusCode == HttpStatusCode.Forbidden || clientResult.StatusCode == (HttpStatusCode)429;
+                    bool isTransient = clientResult.StatusCode == HttpStatusCode.RequestTimeout || ((int?)clientResult.StatusCode >= 500 && (int?)clientResult.StatusCode < 600);
+
+                    if ((isRateLimit || isTransient) && attempt <= maxRetries)
+                    {
+                        TimeSpan retryAfterDelay = TimeSpan.Zero;
+                        TimeSpan finalDelay = retryAfterDelay > TimeSpan.Zero ? retryAfterDelay : delay;
+                        RetroLogger.Log($"GitHub request failed with {clientResult.StatusCode}. Retrying ({attempt}/{maxRetries}) in {finalDelay.TotalSeconds:F1}s...", "WARNING");
+                        
+                        var delayProvider = ((RateLimitCoordinator)_rateLimitCoordinator).DelayProvider;
+                        await delayProvider.DelayAsync(finalDelay, cancellationToken);
+                        
+                        delay = TimeSpan.FromTicks(delay.Ticks * 2);
+                        continue;
+                    }
+
+                    var category = ErrorCategory.Internal;
+                    if (clientResult.StatusCode == HttpStatusCode.NotFound) category = ErrorCategory.NotFound;
+                    else if (isRateLimit) category = ErrorCategory.RateLimit;
+
+                    return OperationResult<ReleaseInfo>.Fail(clientResult.ErrorMessage ?? "Failed to fetch latest release.", category);
+                }
+                catch (Exception ex)
+                {
+                    if (cachedEntry != null)
+                    {
+                        RetroLogger.Log($"Network failure: {ex.Message}. Falling back to stale cached metadata.", "WARNING");
+                        try
+                        {
+                            var cachedRelease = JsonSerializer.Deserialize<GitHubRelease>(cachedEntry.ResponseBody);
+                            if (cachedRelease != null)
+                            {
+                                var mapped = MapRelease(cachedRelease, query.Owner, query.Repository);
+                                return OperationResult<ReleaseInfo>.Ok(mapped, isFromCache: true);
+                            }
+                        }
+                        catch { }
+                    }
+
+                    var mappedErr = NetworkFailureMapper.MapException(ex);
+                    if (attempt > maxRetries || mappedErr.Category == ErrorCategory.Internal)
+                    {
+                        return OperationResult<ReleaseInfo>.Fail(mappedErr.Message, mappedErr.Category, ex);
+                    }
+
+                    var jitter = new Random();
+                    TimeSpan netDelay = delay.Add(TimeSpan.FromMilliseconds(jitter.Next(0, 300)));
+                    RetroLogger.Log($"Network failure. Retrying ({attempt}/{maxRetries}) in {netDelay.TotalSeconds:F1}s...", "WARNING");
+                    
+                    var delayProvider = ((RateLimitCoordinator)_rateLimitCoordinator).DelayProvider;
+                    await delayProvider.DelayAsync(netDelay, cancellationToken);
+                    
+                    delay = TimeSpan.FromTicks(delay.Ticks * 2);
+                }
+            }
         }
 
         public async Task<OperationResult<IReadOnlyList<ReleaseInfo>>> GetReleasesAsync(ReleaseQuery query, CancellationToken cancellationToken)
@@ -310,6 +441,38 @@ namespace RetroLauncher
                 info.Assets.Add(new ReleaseAssetInfo
                 {
                     Id = asset.Id.ToString(),
+                    Name = asset.Name,
+                    DownloadUrl = asset.BrowserDownloadUrl,
+                    Size = asset.Size,
+                    ContentType = asset.ContentType,
+                    CreatedAt = asset.CreatedAt,
+                    UpdatedAt = asset.UpdatedAt
+                });
+            }
+
+            return info;
+        }
+
+        private ReleaseInfo MapRelease(GitHubRelease dto, string owner, string repo)
+        {
+            var info = new ReleaseInfo
+            {
+                Provider = ReleaseProviderType.GitHub,
+                RepositoryIdentifier = $"{owner}/{repo}",
+                Tag = dto.TagName,
+                Name = dto.Name,
+                Description = dto.Name,
+                IsDraft = dto.IsDraft,
+                IsPrerelease = dto.IsPrerelease,
+                PublishedAt = dto.PublishedAt,
+                WebUrl = dto.HtmlUrl
+            };
+
+            foreach (var asset in dto.Assets)
+            {
+                info.Assets.Add(new ReleaseAssetInfo
+                {
+                    Id = asset.Name,
                     Name = asset.Name,
                     DownloadUrl = asset.BrowserDownloadUrl,
                     Size = asset.Size,

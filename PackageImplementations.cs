@@ -41,55 +41,92 @@ namespace RetroLauncher
     {
         public async Task<List<PackageManifest>> GetCatalogAsync(string source, CancellationToken token)
         {
-            using (var client = new HttpClient())
+            if (string.IsNullOrWhiteSpace(source))
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher");
-                string json = await client.GetStringAsync($"https://api.github.com/repos/{source}/releases/latest", token);
-                using (var doc = JsonDocument.Parse(json))
-                {
-                    var root = doc.RootElement;
-                    string version = root.GetProperty("tag_name").GetString() ?? "";
-                    string downloadUrl = "";
-                    string fileName = "";
-                    long size = 0;
-
-                    if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var asset in assets.EnumerateArray())
-                        {
-                            string name = asset.GetProperty("name").GetString() ?? "";
-                            string nameLower = name.ToLower();
-                            if ((nameLower.Contains("win") || nameLower.Contains("x64") || nameLower.Contains("x86_64") || nameLower.Contains("windows")) &&
-                                (nameLower.EndsWith(".zip") || nameLower.EndsWith(".7z")))
-                            {
-                                downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
-                                fileName = name;
-                                size = asset.GetProperty("size").GetInt64();
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!string.IsNullOrEmpty(downloadUrl))
-                    {
-                        var manifest = new PackageManifest
-                        {
-                            id = source.Split('/').Last().ToLower(),
-                            name = source.Split('/').Last(),
-                            description = $"Latest release of {source}",
-                            packageType = PackageType.Emulator,
-                            version = version,
-                            downloadUrl = downloadUrl,
-                            fileName = fileName,
-                            archiveType = fileName.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ? "7z" : "zip",
-                            downloadSize = size,
-                            installFolder = source.Split('/').Last()
-                        };
-                        return new List<PackageManifest> { manifest };
-                    }
-                }
+                throw new ArgumentException("Source repository string cannot be null or empty.");
             }
-            return new List<PackageManifest>();
+
+            string[] parts = source.Split('/');
+            if (parts.Length != 2)
+            {
+                throw new ArgumentException($"Invalid source repository format: '{source}'. Expected 'owner/repo'.");
+            }
+
+            string owner = parts[0];
+            string repo = parts[1];
+
+            var client = GitHubReleaseClient.Instance;
+            var result = await client.GetLatestReleaseAsync(owner, repo, null, token);
+            if (!result.Success || result.Data == null)
+            {
+                throw new Exception($"Failed to retrieve package catalog from GitHub: {result.ErrorMessage}");
+            }
+
+            var release = result.Data;
+            
+            // Map GitHubRelease to ReleaseInfo
+            var releaseInfo = new ReleaseInfo
+            {
+                Provider = ReleaseProviderType.GitHub,
+                RepositoryIdentifier = source,
+                Tag = release.TagName,
+                Name = release.Name,
+                Description = release.Name,
+                IsDraft = release.IsDraft,
+                IsPrerelease = release.IsPrerelease,
+                PublishedAt = release.PublishedAt,
+                WebUrl = release.HtmlUrl
+            };
+
+            foreach (var asset in release.Assets)
+            {
+                releaseInfo.Assets.Add(new ReleaseAssetInfo
+                {
+                    Id = asset.Name,
+                    Name = asset.Name,
+                    DownloadUrl = asset.BrowserDownloadUrl,
+                    Size = asset.Size,
+                    ContentType = asset.ContentType,
+                    CreatedAt = asset.CreatedAt,
+                    UpdatedAt = asset.UpdatedAt
+                });
+            }
+
+            // Get configured emulator definition for better rules mapping, or fallback
+            var definitionProvider = new JsonEmulatorDefinitionProvider();
+            var definition = definitionProvider.GetById(repo.ToLower()) ?? new EmulatorDefinition
+            {
+                Id = repo.ToLower(),
+                DisplayName = repo,
+                InstallationDirectoryName = $"Emulators/{repo}"
+            };
+
+            var selector = new ReleaseAssetSelector();
+            var selectResult = selector.SelectAsset(definition, releaseInfo);
+            if (!selectResult.Success || selectResult.SelectedAsset == null)
+            {
+                throw new Exception($"Failed to find a compatible release asset for repository '{source}': {selectResult.Message}");
+            }
+
+            var selectedAsset = selectResult.SelectedAsset;
+            string ext = Path.GetExtension(selectedAsset.Name).ToLower();
+            string archiveType = ext == ".7z" ? "7z" : "zip";
+
+            var manifest = new PackageManifest
+            {
+                id = repo.ToLower(),
+                name = repo,
+                description = $"Latest release of {source}",
+                packageType = PackageType.Emulator,
+                version = release.TagName,
+                downloadUrl = selectedAsset.DownloadUrl,
+                fileName = selectedAsset.Name,
+                archiveType = archiveType,
+                downloadSize = selectedAsset.Size,
+                installFolder = repo
+            };
+
+            return new List<PackageManifest> { manifest };
         }
     }
 

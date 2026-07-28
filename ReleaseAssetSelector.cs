@@ -114,45 +114,54 @@ namespace RetroLauncher
                 return result;
             }
 
-            var systemArch = RuntimeInformation.ProcessArchitecture;
-            bool is64Bit = systemArch == Architecture.X64 || systemArch == Architecture.Arm64;
             var candidates = new List<(ReleaseAssetInfo Asset, int Score)>();
+
+            // Terms that must be rejected
+            var rejectTerms = new[]
+            {
+                "source", "src", "symbols", "pdb", "debug", "checksum", "sha256", 
+                "signature", "asc", "arm", "arm64", "linux", "macos", "osx", 
+                "flatpak", "appimage", "qt6symbols"
+            };
+
+            // Terms that are preferred
+            var preferTerms = new[]
+            {
+                "windows", "win", "x64", "amd64", "x86_64", "portable", "qt"
+            };
 
             foreach (var asset in release.Assets)
             {
                 string nameLower = asset.Name.ToLower();
 
-                // 1. Exclude non-Windows platform artifacts
-                if (nameLower.Contains("linux") || nameLower.Contains("ubuntu") || nameLower.Contains("macos") ||
-                    nameLower.Contains("osx") || nameLower.Contains("android") || nameLower.EndsWith(".apk") ||
-                    nameLower.EndsWith(".appimage") || nameLower.EndsWith(".dmg") || nameLower.EndsWith(".pkg") ||
-                    nameLower.EndsWith(".deb"))
+                // 1. Reject terms check
+                bool rejected = false;
+                foreach (var term in rejectTerms)
                 {
-                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "targets non-Windows platform" });
+                    if (nameLower.Contains(term))
+                    {
+                        result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = $"contains excluded term '{term}'" });
+                        rejected = true;
+                        break;
+                    }
+                }
+                if (rejected) continue;
+
+                // 2. Archive format check (ZIP and 7Z only)
+                string ext = Path.GetExtension(asset.Name).ToLower();
+                if (ext != ".zip" && ext != ".7z")
+                {
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "unsupported archive format (only ZIP/7Z allowed)" });
                     continue;
                 }
 
-                // 2. Incompatible architecture check (prefer x64 on x64 systems, reject ARM/ARM64 on X64)
-                if (is64Bit && (nameLower.Contains("arm") || nameLower.Contains("arm64") || nameLower.Contains("aarch64")))
+                // 3. browser_download_url validation
+                if (string.IsNullOrWhiteSpace(asset.DownloadUrl))
                 {
-                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "incompatible architecture (ARM/ARM64)" });
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "empty download URL" });
                     continue;
                 }
 
-                // 3. Exclude non-target file types (debug symbols, source code, checksums, signatures)
-                if (nameLower.Contains("debug") || nameLower.Contains("symbols") || nameLower.Contains("pdb") ||
-                    nameLower.Contains("dsym") || nameLower.Contains("dbg") || nameLower.EndsWith(".pdb") ||
-                    nameLower.Contains("deps") || nameLower.Contains("dependencies") ||
-                    nameLower.EndsWith(".sha256") || nameLower.EndsWith(".sha256sum") || nameLower.EndsWith(".md5") ||
-                    nameLower.EndsWith(".sha1") || nameLower.EndsWith(".sha512") ||
-                    nameLower.EndsWith(".asc") || nameLower.EndsWith(".sig") || nameLower.EndsWith(".pgp") || nameLower.EndsWith(".gpg") ||
-                    nameLower.Contains("source") || nameLower.Contains("-src") || nameLower.Contains(".src."))
-                {
-                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "excluded file type (symbols/source/checksum/sig)" });
-                    continue;
-                }
-
-                // 4. Validate HTTPS download URLs and allowed hosts
                 if (!Uri.TryCreate(asset.DownloadUrl, UriKind.Absolute, out var uri))
                 {
                     result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "invalid absolute download URL" });
@@ -165,59 +174,57 @@ namespace RetroLauncher
                     continue;
                 }
 
-                if (!AllowedDownloadHostPolicy.IsHostAllowed(asset.DownloadUrl))
+                // GitHub or GitHub release asset host
+                string host = uri.Host;
+                bool isGitHubHost = host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                                    host.EndsWith(".github.com", StringComparison.OrdinalIgnoreCase) ||
+                                    host.Equals("githubusercontent.com", StringComparison.OrdinalIgnoreCase) ||
+                                    host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
+
+                if (!isGitHubHost)
                 {
-                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "disallowed host domain" });
+                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "disallowed download host domain (GitHub only)" });
                     continue;
                 }
 
-                // 5. Verify file extension matches content-type
-                string ext = Path.GetExtension(asset.Name).ToLower();
-                if (ext != ".zip" && ext != ".7z")
-                {
-                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "unsupported archive format (only ZIP/7Z allowed)" });
-                    continue;
-                }
-
-                if (!string.IsNullOrEmpty(asset.ContentType))
-                {
-                    string ct = asset.ContentType.ToLower();
-                    if (ext == ".zip" && !ct.Contains("zip") && !ct.Contains("octet-stream"))
-                    {
-                        RetroLogger.Log($"Warning: ZIP asset '{asset.Name}' has mismatching content-type '{asset.ContentType}'", "WARNING");
-                    }
-                    else if (ext == ".7z" && !ct.Contains("7z") && !ct.Contains("x-7z-compressed") && !ct.Contains("octet-stream"))
-                    {
-                        RetroLogger.Log($"Warning: 7Z asset '{asset.Name}' has mismatching content-type '{asset.ContentType}'", "WARNING");
-                    }
-                }
-
-                // Calculate Score
+                // 4. Calculate Score
                 int score = 0;
-                
-                // Match definition inclusion patterns
-                bool matchesInclude = false;
+
+                // Match definition inclusion patterns (glob match)
+                bool matchesRule = false;
                 if (definition.AssetSelectionRules != null && definition.AssetSelectionRules.Any())
                 {
-                    foreach (var pattern in definition.AssetSelectionRules)
+                    foreach (var rule in definition.AssetSelectionRules)
                     {
-                        if (MatchesPattern(asset.Name, pattern))
+                        if (MatchesPattern(asset.Name, rule))
                         {
-                            matchesInclude = true;
+                            matchesRule = true;
                             break;
                         }
                     }
                 }
-                else
+
+                if (matchesRule)
                 {
-                    matchesInclude = nameLower.Contains("win") || nameLower.Contains("x64") || nameLower.Contains("windows");
+                    score += 1000;
                 }
 
-                if (matchesInclude) score += 100;
-                if (ext == ".zip" || ext == ".7z") score += 50;
-                if (nameLower.Contains("win64") || nameLower.Contains("x64") || nameLower.Contains("x86-64")) score += 20;
+                // Preference scoring
+                foreach (var term in preferTerms)
+                {
+                    if (nameLower.Contains(term))
+                    {
+                        score += 20;
+                    }
+                }
 
-                result.Scores.Add(new CandidateScore { Name = asset.Name, Score = score });
+                // Small tie-breaker preference for ZIP over 7Z if scores are equal
+                if (ext == ".zip")
+                {
+                    score += 5;
+                }
+
+                result.Scores.Add(new CandidateScore { Name = asset.Name, Score = score, Explanation = $"Base score calculated. Matches rules: {matchesRule}." });
                 candidates.Add((asset, score));
             }
 

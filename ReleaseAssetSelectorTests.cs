@@ -108,7 +108,7 @@ namespace RetroLauncher
                             Assets = new List<GitHubReleaseAsset>
                             {
                                 new GitHubReleaseAsset { Name = "duckstation-windows-x64-release.zip", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-windows-x64-release.zip", Size = 15000000 },
-                                new GitHubReleaseAsset { Name = "duckstation-windows-x64-release-qt.zip", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-windows-x64-release-qt.zip", Size = 15000000 }
+                                new GitHubReleaseAsset { Name = "duckstation-windows-x64-release-v2.zip", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-windows-x64-release-v2.zip", Size = 15000000 }
                             }
                         }
                     };
@@ -121,6 +121,78 @@ namespace RetroLauncher
                 {
                     duckDef.AssetSelectionRules = originalRules;
                 }
+            }
+
+            // Test Case 5: Release containing source archives
+            if (duckDef != null)
+            {
+                var sourceReleases = new List<GitHubRelease>
+                {
+                    new GitHubRelease
+                    {
+                        TagName = "v0.1.3000",
+                        IsDraft = false,
+                        IsPrerelease = false,
+                        Assets = new List<GitHubReleaseAsset>
+                        {
+                            new GitHubReleaseAsset { Name = "duckstation-src.zip", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-src.zip", Size = 5000000 },
+                            new GitHubReleaseAsset { Name = "source.zip", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/source.zip", Size = 5000000 },
+                            new GitHubReleaseAsset { Name = "duckstation-windows-x64-release.zip", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-windows-x64-release.zip", Size = 15000000 }
+                        }
+                    }
+                };
+
+                var srcResult = selector.SelectAsset(duckDef, sourceReleases);
+                Debug.Assert(srcResult.Status == SelectionStatus.Success, "Source selection should succeed because a valid Windows package exists.");
+                Debug.Assert(srcResult.SelectedAsset?.Name == "duckstation-windows-x64-release.zip", "Should select the release ZIP and skip source archives.");
+                RetroLogger.Log("Test Case 5 passed: Source archives correctly ignored and valid package selected.");
+            }
+
+            // Test Case 6: Release containing ARM and x64 files
+            if (duckDef != null)
+            {
+                var armReleases = new List<GitHubRelease>
+                {
+                    new GitHubRelease
+                    {
+                        TagName = "v0.1.3000",
+                        IsDraft = false,
+                        IsPrerelease = false,
+                        Assets = new List<GitHubReleaseAsset>
+                        {
+                            new GitHubReleaseAsset { Name = "duckstation-windows-arm64-release.zip", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-windows-arm64-release.zip", Size = 15000000 },
+                            new GitHubReleaseAsset { Name = "duckstation-windows-x64-release.zip", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-windows-x64-release.zip", Size = 15000000 }
+                        }
+                    }
+                };
+
+                var armResult = selector.SelectAsset(duckDef, armReleases);
+                Debug.Assert(armResult.Status == SelectionStatus.Success, "ARM vs x64 selection should succeed.");
+                Debug.Assert(armResult.SelectedAsset?.Name == "duckstation-windows-x64-release.zip", "Should select x64 over ARM.");
+                RetroLogger.Log("Test Case 6 passed: x64 asset selected successfully over ARM.");
+            }
+
+            // Test Case 7: Release without supported Windows assets
+            if (duckDef != null)
+            {
+                var noWinReleases = new List<GitHubRelease>
+                {
+                    new GitHubRelease
+                    {
+                        TagName = "v0.1.3000",
+                        IsDraft = false,
+                        IsPrerelease = false,
+                        Assets = new List<GitHubReleaseAsset>
+                        {
+                            new GitHubReleaseAsset { Name = "duckstation-linux-x64.tar.gz", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-linux-x64.tar.gz", Size = 15000000 },
+                            new GitHubReleaseAsset { Name = "duckstation-macos.dmg", BrowserDownloadUrl = "https://github.com/stenzek/duckstation/releases/download/v0.1.3000/duckstation-macos.dmg", Size = 15000000 }
+                        }
+                    }
+                };
+
+                var noWinResult = selector.SelectAsset(duckDef, noWinReleases);
+                Debug.Assert(noWinResult.Status == SelectionStatus.NoCompatiblePackage, "Selection should fail since no Windows assets are available.");
+                RetroLogger.Log("Test Case 7 passed: No supported Windows assets detected successfully.");
             }
 
             RetroLogger.Log("All ReleaseAssetSelector Unit Tests completed successfully!");

@@ -84,7 +84,7 @@ namespace RetroLauncher
                 client.BaseAddress = new Uri(_settings.GitHub.BaseUrl);
                 client.Timeout = TimeSpan.FromSeconds(_settings.GitHub.RequestTimeoutSeconds);
                 
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher/1.0");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher");
                 client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
                 client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
 
@@ -97,12 +97,12 @@ namespace RetroLauncher
             else if (name == "PackageDownloads")
             {
                 client.Timeout = TimeSpan.FromSeconds(_settings.Network.RequestTimeoutSeconds);
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher/1.0");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher");
             }
             else
             {
                 client.Timeout = TimeSpan.FromSeconds(_settings.Network.RequestTimeoutSeconds);
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher/1.0");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher");
             }
 
             return client;
