@@ -99,11 +99,12 @@ namespace RetroLauncher
 
                 // 1. Download
                 Log($"Downloading archive from: {package.downloadUrl}");
-                var downloadProgress = new Progress<int>(percent =>
+                var downloadProgress = new Progress<PackageDownloadProgress>(p =>
                 {
-                    progress?.Report(5 + (int)(percent * 0.70));
+                    progress?.Report(5 + (int)(p.Percentage * 0.70));
                 });
-                tempFile = await _downloader.DownloadAsync(package.downloadUrl, downloadProgress, token);
+                string operationId = Guid.NewGuid().ToString("N");
+                tempFile = await _downloader.DownloadAsync(package.downloadUrl, downloadProgress, token, package.id, operationId, package.fileName);
 
                 // 2. Verify Checksum
                 progress?.Report(80);

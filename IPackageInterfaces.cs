@@ -12,7 +12,13 @@ namespace RetroLauncher
 
     public interface IPackageDownloader
     {
-        Task<string> DownloadAsync(string url, IProgress<int>? progress, CancellationToken token);
+        Task<string> DownloadAsync(
+            string url,
+            IProgress<PackageDownloadProgress>? progress,
+            CancellationToken token,
+            string packageId = "default",
+            string operationId = "",
+            string originalAssetName = "");
     }
 
     public interface IPackageVerifier

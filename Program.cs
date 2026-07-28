@@ -11,6 +11,7 @@ static class Program
 #if DEBUG
         ReleaseAssetSelectorTests.RunTests();
         ArchiveExtractorTests.RunTestsAsync().GetAwaiter().GetResult();
+        HttpPackageDownloaderTests.RunTestsAsync().GetAwaiter().GetResult();
         EmulatorUpdateServiceTests.RunTests();
         GitHubReleaseProviderTests.RunTests();
 #endif
