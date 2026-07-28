@@ -70,4 +70,29 @@ namespace RetroLauncher
     {
         public List<InstalledPackage> InstalledPackages { get; set; } = new();
     }
+
+    public enum PackageInstallStage
+    {
+        ResolvingRelease,
+        SelectingAsset,
+        Downloading,
+        ValidatingDownload,
+        Extracting,
+        LocatingExecutable,
+        Registering,
+        Completed
+    }
+
+    public sealed class PackageInstallResult
+    {
+        public bool Success { get; init; }
+        public string PackageId { get; init; } = "";
+        public string? Version { get; init; }
+        public string? InstallDirectory { get; init; }
+        public string? ExecutablePath { get; init; }
+        public PackageInstallStage FailedStage { get; init; }
+        public string? ErrorCode { get; init; }
+        public string? ErrorMessage { get; init; }
+        public Exception? Exception { get; init; }
+    }
 }

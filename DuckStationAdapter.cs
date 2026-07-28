@@ -41,7 +41,10 @@ namespace RetroLauncher
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    RetroLogger.Log($"Failed to create portable.txt for DuckStation: {ex.Message}", "WARNING");
+                }
             }
 
             return fullPath;

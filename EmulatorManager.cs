@@ -162,103 +162,45 @@ namespace RetroLauncher
             return false;
         }
 
-        public async Task<bool> InstallEmulator(string emulatorId, IProgress<int>? progress = null)
+        public async Task<PackageInstallResult> InstallEmulator(string emulatorId, IProgress<int>? progress = null)
         {
-            var emu = FindEmulator(emulatorId);
-            if (emu == null || string.IsNullOrWhiteSpace(emu.Repo)) return false;
-
             try
             {
-                progress?.Report(5);
-                var info = await GetLatestReleaseInfoAsync(emu.Repo);
-                if (info == null) return false;
-
-                string downloadUrl = info.Value.DownloadUrl;
-                string tagName = info.Value.TagName;
-
-                string tempDir = Path.Combine(AppContext.BaseDirectory, "temp");
-                if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
-
-                string archiveName = Path.GetFileName(new Uri(downloadUrl).AbsolutePath);
-                string archivePath = Path.Combine(tempDir, archiveName);
-
-                progress?.Report(10);
-
-                // Download the release
-                using (var client = new HttpClient())
+                var service = new EmulatorInstallationService();
+                var serviceProgress = new Progress<EmulatorInstallationProgress>(p =>
                 {
-                    client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher");
-                    using (var response = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
-                    {
-                        response.EnsureSuccessStatusCode();
-                        long? totalBytes = response.Content.Headers.ContentLength;
+                    progress?.Report(p.Percentage);
+                });
 
-                        using (var contentStream = await response.Content.ReadAsStreamAsync())
-                        using (var fileStream = new FileStream(archivePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
-                        {
-                            var buffer = new byte[8192];
-                            long totalRead = 0;
-                            int bytesRead;
-
-                            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                            {
-                                await fileStream.WriteAsync(buffer, 0, bytesRead);
-                                totalRead += bytesRead;
-
-                                if (totalBytes.HasValue)
-                                {
-                                    int percent = (int)((double)totalRead / totalBytes.Value * 80) + 10;
-                                    progress?.Report(percent);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                progress?.Report(90);
-
-                // Extract
-                string destDir = Path.Combine(AppContext.BaseDirectory, "Emulators", emu.Name);
-                if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
-
-                bool extracted = false;
-                if (archivePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                var req = new EmulatorInstallationRequest
                 {
-                    ZipFile.ExtractToDirectory(archivePath, destDir, true);
-                    extracted = true;
-                }
-                else if (archivePath.EndsWith(".7z", StringComparison.OrdinalIgnoreCase))
-                {
-                    extracted = Extract7zUsingTar(archivePath, destDir);
-                }
+                    EmulatorId = emulatorId,
+                    Progress = serviceProgress,
+                    CancellationToken = CancellationToken.None
+                };
 
-                if (extracted)
-                {
-                    // Find executable in target directory
-                    string? exePath = FindExecutableInFolder(destDir);
-                    if (exePath != null)
-                    {
-                        emu.Path = MakeRelativePath(exePath);
-                        emu.Version = tagName;
-                        SaveEmulators();
-                        progress?.Report(100);
-                        return true;
-                    }
-                }
+                return await service.InstallAsync(req);
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Failed to install emulator: {ex.Message}");
+                Debug.WriteLine($"Failed to install emulator {emulatorId}: {ex.Message}");
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = emulatorId,
+                    FailedStage = PackageInstallStage.ResolvingRelease,
+                    ErrorMessage = ex.Message,
+                    Exception = ex
+                };
             }
-            return false;
         }
 
-        public async Task<bool> UpdateEmulator(string emulatorId, IProgress<int>? progress = null)
+        public async Task<PackageInstallResult> UpdateEmulator(string emulatorId, IProgress<int>? progress = null)
         {
             return await InstallEmulator(emulatorId, progress);
         }
 
-        public async Task<bool> RepairEmulator(string emulatorId, IProgress<int>? progress = null)
+        public async Task<PackageInstallResult> RepairEmulator(string emulatorId, IProgress<int>? progress = null)
         {
             return await InstallEmulator(emulatorId, progress);
         }
@@ -465,9 +407,9 @@ namespace RetroLauncher
                         ExecutablePath = "Emulators/PS1/duckstation.exe",
                         InstallFolder = "Emulators/PS1",
                         ArchiveType = "zip",
-                        InstalledVersion = "1.0.0",
-                        LatestVersion = "1.0.0",
-                        Status = "Installed",
+                        InstalledVersion = "",
+                        LatestVersion = "",
+                        Status = "Missing",
                         RequiresBIOS = true,
                         RequiresFirmware = false,
                         DefaultLaunchArguments = "-fullscreen"
@@ -482,9 +424,9 @@ namespace RetroLauncher
                         ExecutablePath = "Emulators/PS2/pcsx2.exe",
                         InstallFolder = "Emulators/PS2",
                         ArchiveType = "7z",
-                        InstalledVersion = "1.7.0",
-                        LatestVersion = "1.7.0",
-                        Status = "Installed",
+                        InstalledVersion = "",
+                        LatestVersion = "",
+                        Status = "Missing",
                         RequiresBIOS = true,
                         RequiresFirmware = false,
                         DefaultLaunchArguments = "-fullscreen"
@@ -499,9 +441,9 @@ namespace RetroLauncher
                         ExecutablePath = "Emulators/PS3/rpcs3.exe",
                         InstallFolder = "Emulators/PS3",
                         ArchiveType = "7z",
-                        InstalledVersion = "0.0.30",
-                        LatestVersion = "0.0.30",
-                        Status = "Installed",
+                        InstalledVersion = "",
+                        LatestVersion = "",
+                        Status = "Missing",
                         RequiresBIOS = false,
                         RequiresFirmware = true,
                         DefaultLaunchArguments = "--fullscreen"

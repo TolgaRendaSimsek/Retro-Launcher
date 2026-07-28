@@ -354,13 +354,13 @@ namespace RetroLauncher
             for (int i = 0; i < _progressRows.Count; i++)
             {
                 var row = _progressRows[i];
-                bool success = false;
+                PackageInstallResult? installResult = null;
                 int retries = 0;
 
-                while (!success && retries < 2)
+                while ((installResult == null || !installResult.Success) && retries < 2)
                 {
-                    success = await RunSingleInstallation(row);
-                    if (!success)
+                    installResult = await RunSingleInstallation(row);
+                    if (!installResult.Success)
                     {
                         retries++;
                         if (retries < 2)
@@ -371,26 +371,28 @@ namespace RetroLauncher
                     }
                 }
 
-                if (success)
+                if (installResult != null && installResult.Success)
                 {
                     results[row.Emulator.Name] = "Installed successfully.";
                 }
                 else
                 {
-                    results[row.Emulator.Name] = "Installation failed. Please download manually.";
+                    string errMsg = installResult?.ErrorMessage ?? "Unknown error";
+                    results[row.Emulator.Name] = $"Installation failed: {errMsg}";
                     row.ShowRetryButton(async () =>
                     {
                         row.HideRetryButton();
                         row.SetStatus("Restarting installation...");
-                        bool retriedSuccess = await RunSingleInstallation(row);
-                        if (retriedSuccess)
+                        var retriedResult = await RunSingleInstallation(row);
+                        if (retriedResult.Success)
                         {
                             results[row.Emulator.Name] = "Installed successfully.";
                             CheckIfAllDoneAndTransition(results);
                         }
                         else
                         {
-                            results[row.Emulator.Name] = "Installation failed. Please download manually.";
+                            string retriedErrMsg = retriedResult.ErrorMessage ?? "Unknown error";
+                            results[row.Emulator.Name] = $"Installation failed: {retriedErrMsg}";
                             row.ShowRetryButton(null);
                         }
                     });
@@ -413,8 +415,9 @@ namespace RetroLauncher
             }
         }
 
-        private async Task<bool> RunSingleInstallation(EmulatorProgressRow row)
+        private async Task<PackageInstallResult> RunSingleInstallation(EmulatorProgressRow row)
         {
+            row.HideRetryButton();
             var progress = new Progress<int>(percent =>
             {
                 row.SetProgress(percent);
@@ -428,13 +431,31 @@ namespace RetroLauncher
 
             try
             {
-                bool ok = await EmulatorManager.Instance.InstallEmulator(row.Emulator.Id, progress);
-                return ok;
+                var result = await EmulatorManager.Instance.InstallEmulator(row.Emulator.Id, progress);
+                if (result.Success)
+                {
+                    row.SetStatus("Completed");
+                    row.SetProgress(100);
+                }
+                else
+                {
+                    row.SetProgress(0);
+                    row.SetStatus($"Failed at {result.FailedStage}: {result.ErrorMessage}");
+                }
+                return result;
             }
             catch (Exception ex)
             {
+                row.SetProgress(0);
                 row.SetStatus($"Failed: {ex.Message}");
-                return false;
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = row.Emulator.Id,
+                    FailedStage = PackageInstallStage.Downloading,
+                    ErrorMessage = ex.Message,
+                    Exception = ex
+                };
             }
         }
 

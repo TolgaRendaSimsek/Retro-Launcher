@@ -54,16 +54,8 @@ namespace RetroLauncher
         public CancellationToken CancellationToken { get; set; }
     }
 
-    public class EmulatorInstallationResult
-    {
-        public bool Success { get; set; }
-        public InstalledEmulatorInfo? InstalledInfo { get; set; }
-        public InstallationFailureReason FailureReason { get; set; }
-        public string? ErrorMessage { get; set; }
-    }
-
     public interface IEmulatorInstallationService
     {
-        Task<EmulatorInstallationResult> InstallAsync(EmulatorInstallationRequest request);
+        Task<PackageInstallResult> InstallAsync(EmulatorInstallationRequest request);
     }
 }

@@ -1132,10 +1132,10 @@ namespace RetroLauncher
 
                 var installResult = await _installationService.InstallAsync(installReq);
 
-                if (installResult.Success && installResult.InstalledInfo != null)
+                if (installResult.Success)
                 {
                     lblStatus.Text = "Installation complete!";
-                    MessageBox.Show($"{selectedEmu.Name} installed successfully to version {installResult.InstalledInfo.InstalledVersion}!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show($"{selectedEmu.Name} installed successfully to version {installResult.Version}!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     
                     // Reload settings
                     _config = EmulatorManager.LoadConfig();

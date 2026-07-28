@@ -34,7 +34,7 @@ namespace RetroLauncher
             _packageVerifier = packageVerifier ?? new EmuPackageVerifier();
         }
 
-        public async Task<EmulatorInstallationResult> InstallAsync(EmulatorInstallationRequest request)
+        public async Task<PackageInstallResult> InstallAsync(EmulatorInstallationRequest request)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
 
@@ -43,10 +43,11 @@ namespace RetroLauncher
             var definition = _definitionProvider.GetById(request.EmulatorId);
             if (definition == null)
             {
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.ReleaseNotFound,
+                    PackageId = request.EmulatorId,
+                    FailedStage = PackageInstallStage.ResolvingRelease,
                     ErrorMessage = $"Emulator definition '{request.EmulatorId}' not found."
                 };
             }
@@ -68,10 +69,11 @@ namespace RetroLauncher
                 var activeProcesses = System.Diagnostics.Process.GetProcessesByName(processName);
                 if (activeProcesses.Any())
                 {
-                    return new EmulatorInstallationResult
+                    return new PackageInstallResult
                     {
                         Success = false,
-                        FailureReason = InstallationFailureReason.EmulatorIsRunning,
+                        PackageId = definition.Id,
+                        FailedStage = PackageInstallStage.ResolvingRelease,
                         ErrorMessage = $"Cannot update '{definition.DisplayName}' because the emulator '{processName}' is currently running. Please close the application and retry."
                     };
                 }
@@ -102,10 +104,11 @@ namespace RetroLauncher
 
             if (selectedRelease == null)
             {
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.ReleaseNotFound,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.ResolvingRelease,
                     ErrorMessage = $"Unable to retrieve release tag for '{definition.DisplayName}' from repository '{definition.RepositoryOwner}/{definition.RepositoryName}'."
                 };
             }
@@ -115,10 +118,11 @@ namespace RetroLauncher
             var selectorResult = newSelector.SelectAsset(definition, selectedRelease);
             if (!selectorResult.Success || selectorResult.SelectedAsset == null)
             {
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.CompatibleAssetNotFound,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.SelectingAsset,
                     ErrorMessage = $"Could not identify a compatible Windows package for '{definition.DisplayName}': {selectorResult.Message}"
                 };
             }
@@ -151,11 +155,36 @@ namespace RetroLauncher
             var downloadResult = await _downloadManager.DownloadAsync(downloadReq);
             if (!downloadResult.Success)
             {
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.DownloadFailed,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.Downloading,
                     ErrorMessage = $"Download failed: {downloadResult.ErrorMessage}"
+                };
+            }
+
+            // Check if downloaded archive exists and is non-empty
+            if (!File.Exists(archivePath))
+            {
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.Downloading,
+                    ErrorMessage = "Downloaded archive file does not exist."
+                };
+            }
+
+            if (new FileInfo(archivePath).Length <= 0)
+            {
+                CleanFile(archivePath);
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.Downloading,
+                    ErrorMessage = "Downloaded archive file is empty."
                 };
             }
 
@@ -165,10 +194,11 @@ namespace RetroLauncher
             if (!verifyResult.Success)
             {
                 CleanFile(archivePath);
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.ValidationFailed,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.ValidatingDownload,
                     ErrorMessage = $"Package verification failed: {verifyResult.Message}"
                 };
             }
@@ -197,25 +227,27 @@ namespace RetroLauncher
             var extractionResult = await _archiveExtractor.ExtractAsync(extractionReq);
             CleanFile(archivePath); // Done with downloaded file
 
-            if (!extractionResult.Success || string.IsNullOrEmpty(extractionResult.MainExecutablePath))
+            if (!extractionResult.Success)
             {
                 CleanDirectory(stagingPath);
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.ExtractionFailed,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.Extracting,
                     ErrorMessage = $"Extraction failed: {extractionResult.ErrorMessage}"
                 };
             }
 
-            string stagingExe = extractionResult.MainExecutablePath;
-            if (!File.Exists(stagingExe))
+            string stagingExe = extractionResult.MainExecutablePath ?? "";
+            if (string.IsNullOrEmpty(stagingExe) || !File.Exists(stagingExe))
             {
                 CleanDirectory(stagingPath);
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.ExecutableNotFound,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.LocatingExecutable,
                     ErrorMessage = "Located executable is missing inside staging folder."
                 };
             }
@@ -246,11 +278,13 @@ namespace RetroLauncher
                 catch (Exception ex)
                 {
                     CleanDirectory(stagingPath);
-                    return new EmulatorInstallationResult
+                    return new PackageInstallResult
                     {
                         Success = false,
-                        FailureReason = InstallationFailureReason.BackupFailed,
-                        ErrorMessage = $"Failed to back up existing installation directory: {ex.Message}"
+                        PackageId = definition.Id,
+                        FailedStage = PackageInstallStage.Registering,
+                        ErrorMessage = $"Failed to back up existing installation directory: {ex.Message}",
+                        Exception = ex
                     };
                 }
             }
@@ -281,19 +315,22 @@ namespace RetroLauncher
                     catch (Exception rollEx)
                     {
                         RetroLogger.Log($"CRITICAL: Rollback failed! {rollEx.Message}", "ERROR");
-                        return new EmulatorInstallationResult
+                        return new PackageInstallResult
                         {
                             Success = false,
-                            FailureReason = InstallationFailureReason.RollbackFailed,
-                            ErrorMessage = $"Staging deployment failed and rollback restore failed: {rollEx.Message}"
+                            PackageId = definition.Id,
+                            FailedStage = PackageInstallStage.Registering,
+                            ErrorMessage = $"Staging deployment failed and rollback restore failed: {rollEx.Message}",
+                            Exception = rollEx
                         };
                     }
                 }
                 CleanDirectory(stagingPath);
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.InstallationFailed,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.Registering,
                     ErrorMessage = "Deployment phase failed: could not copy files to target directory."
                 };
             }
@@ -308,6 +345,28 @@ namespace RetroLauncher
             string relativeExe = Path.GetRelativePath(stagingPath, stagingExe);
             string finalExePath = Path.Combine(finalDestPath, relativeExe);
 
+            // Security & correctness check: Ensure executable resides inside the destination folder
+            string canonicalDest = Path.GetFullPath(finalDestPath) + Path.DirectorySeparatorChar;
+            string canonicalExe = Path.GetFullPath(finalExePath);
+
+            if (!canonicalExe.StartsWith(canonicalDest, StringComparison.OrdinalIgnoreCase))
+            {
+                // Rollback
+                try
+                {
+                    Directory.Delete(finalDestPath, true);
+                    if (backedUp) Directory.Move(backupPath, finalDestPath);
+                }
+                catch { }
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.LocatingExecutable,
+                    ErrorMessage = "Deployment validation failed: executable is located outside the intended emulator directory."
+                };
+            }
+
             if (!File.Exists(finalExePath))
             {
                 // Rollback since executable validation failed
@@ -317,10 +376,11 @@ namespace RetroLauncher
                     if (backedUp) Directory.Move(backupPath, finalDestPath);
                 }
                 catch { }
-                return new EmulatorInstallationResult
+                return new PackageInstallResult
                 {
                     Success = false,
-                    FailureReason = InstallationFailureReason.ExecutableNotFound,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.LocatingExecutable,
                     ErrorMessage = "Deployment validation failed: executable missing at destination path."
                 };
             }
@@ -347,8 +407,25 @@ namespace RetroLauncher
             // Write install.json inside target directory
             WriteInstallationManifest(finalDestPath, infoRecord);
 
-            // Update emulators.json config
-            UpdateLauncherRegistry(infoRecord, definition);
+            // Update emulators.json config and verify it succeeded
+            bool registrySaved = UpdateLauncherRegistry(infoRecord, definition);
+            if (!registrySaved)
+            {
+                // Rollback
+                try
+                {
+                    Directory.Delete(finalDestPath, true);
+                    if (backedUp) Directory.Move(backupPath, finalDestPath);
+                }
+                catch { }
+                return new PackageInstallResult
+                {
+                    Success = false,
+                    PackageId = definition.Id,
+                    FailedStage = PackageInstallStage.Registering,
+                    ErrorMessage = "Failed to update and save the emulator registration in the local config registry."
+                };
+            }
 
             // Cleanup rollback folder
             if (backedUp && Directory.Exists(backupPath))
@@ -358,10 +435,14 @@ namespace RetroLauncher
 
             ReportProgress(request.Progress, request.EmulatorId, "Installation complete", 100);
 
-            return new EmulatorInstallationResult
+            return new PackageInstallResult
             {
                 Success = true,
-                InstalledInfo = infoRecord
+                PackageId = definition.Id,
+                Version = installedVersion,
+                InstallDirectory = finalDestPath,
+                ExecutablePath = finalExePath,
+                FailedStage = PackageInstallStage.Completed
             };
         }
 
@@ -464,7 +545,7 @@ namespace RetroLauncher
             }
         }
 
-        private static void UpdateLauncherRegistry(InstalledEmulatorInfo info, EmulatorDefinition definition)
+        private static bool UpdateLauncherRegistry(InstalledEmulatorInfo info, EmulatorDefinition definition)
         {
             try
             {
@@ -477,11 +558,14 @@ namespace RetroLauncher
                     emu.Status = "Installed";
                     EmulatorManager.Instance.SaveEmulators();
                     RetroLogger.Log($"Updated Launcher Config for '{info.EmulatorId}' to tag '{info.ReleaseTag}'.");
+                    return true;
                 }
+                return false;
             }
             catch (Exception ex)
             {
                 RetroLogger.Log($"Failed to update emulators.json: {ex.Message}", "WARNING");
+                return false;
             }
         }
 
