@@ -48,6 +48,6 @@ namespace RetroLauncher
 
     public interface IReleaseAssetSelector
     {
-        AssetSelectionResult SelectAsset(EmulatorDefinition definition, IEnumerable<GitHubRelease> releases);
+        AssetSelectionResult SelectAsset(EmulatorPackageDefinition definition, IEnumerable<GitHubRelease> releases);
     }
 }

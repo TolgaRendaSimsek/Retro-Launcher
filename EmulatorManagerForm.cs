@@ -337,7 +337,7 @@ namespace RetroLauncher
 
         private string GetBiosOrFirmwareStatus(EmulatorItem emu)
         {
-            var provider = new JsonEmulatorDefinitionProvider();
+            var provider = new JsonEmulatorPackageDefinitionProvider();
             var definition = provider.GetById(emu.Id);
             if (definition == null) return "Not Required";
 
@@ -494,7 +494,7 @@ namespace RetroLauncher
 
         private async Task CheckRemoteUpdatesAsync()
         {
-            var provider = new JsonEmulatorDefinitionProvider();
+            var provider = new JsonEmulatorPackageDefinitionProvider();
             var githubService = new GitHubReleaseService();
 
             foreach (var emu in _config.Emulators)
@@ -518,7 +518,7 @@ namespace RetroLauncher
                     if (definition.ReleaseSourceType == EmulatorReleaseSourceType.GitHubBinaryRepository ||
                         definition.ReleaseSourceType == EmulatorReleaseSourceType.GitHubReleaseList)
                     {
-                        var listRes = await githubService.GetReleasesAsync(definition.RepositoryOwner, definition.RepositoryName, CancellationToken.None);
+                        var listRes = await githubService.GetReleasesAsync(definition.GitHubOwner, definition.GitHubRepository, CancellationToken.None);
                         if (listRes.Success && listRes.Data != null && listRes.Data.Any())
                         {
                             var selector = new ReleaseAssetSelector();
@@ -531,7 +531,7 @@ namespace RetroLauncher
                     }
                     else
                     {
-                        var latestRes = await githubService.GetLatestReleaseAsync(definition.RepositoryOwner, definition.RepositoryName, CancellationToken.None);
+                        var latestRes = await githubService.GetLatestReleaseAsync(definition.GitHubOwner, definition.GitHubRepository, CancellationToken.None);
                         if (latestRes.Success) latestRelease = latestRes.Data;
                     }
 

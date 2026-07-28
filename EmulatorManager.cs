@@ -28,6 +28,8 @@ namespace RetroLauncher
         public bool RequiresFirmware { get; set; } = false;
         public string DefaultLaunchArguments { get; set; } = "";
         public string ReleaseChannel { get; set; } = "Stable";
+        public string SelectedAssetName { get; set; } = "";
+        public DateTime? InstallationTimestamp { get; set; }
 
         // Backward compatibility properties
         public string Path { get => ExecutablePath; set => ExecutablePath = value; }

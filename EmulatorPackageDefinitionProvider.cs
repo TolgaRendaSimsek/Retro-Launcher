@@ -8,20 +8,20 @@ using System.Text.RegularExpressions;
 
 namespace RetroLauncher
 {
-    public interface IEmulatorDefinitionProvider
+    public interface IEmulatorPackageDefinitionProvider
     {
-        IReadOnlyList<EmulatorDefinition> GetAll();
-        EmulatorDefinition? GetById(string id);
-        IReadOnlyList<EmulatorDefinition> GetByConsole(string consoleName);
-        void Validate(EmulatorDefinition definition);
+        IReadOnlyList<EmulatorPackageDefinition> GetAll();
+        EmulatorPackageDefinition? GetById(string id);
+        IReadOnlyList<EmulatorPackageDefinition> GetByConsole(string consoleName);
+        void Validate(EmulatorPackageDefinition definition);
     }
 
-    public class JsonEmulatorDefinitionProvider : IEmulatorDefinitionProvider
+    public class JsonEmulatorPackageDefinitionProvider : IEmulatorPackageDefinitionProvider
     {
         private readonly string _filePath;
-        private readonly List<EmulatorDefinition> _definitions = new();
+        private readonly List<EmulatorPackageDefinition> _definitions = new();
 
-        public JsonEmulatorDefinitionProvider(string? filePath = null)
+        public JsonEmulatorPackageDefinitionProvider(string? filePath = null)
         {
             _filePath = filePath ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "emulator_definitions.json");
             LoadDefinitions();
@@ -45,10 +45,10 @@ namespace RetroLauncher
                         };
                         options.Converters.Add(new JsonStringEnumConverter());
 
-                        var list = JsonSerializer.Deserialize<List<EmulatorDefinition>>(json, options);
+                        var list = JsonSerializer.Deserialize<List<EmulatorPackageDefinition>>(json, options);
                         if (list != null)
                         {
-                            var verifiedList = new List<EmulatorDefinition>();
+                            var verifiedList = new List<EmulatorPackageDefinition>();
                             foreach (var def in list)
                             {
                                 try
@@ -89,7 +89,7 @@ namespace RetroLauncher
             }
             catch (Exception ex)
             {
-                RetroLogger.Log($"Error initializing emulator definition provider: {ex.Message}", "ERROR");
+                RetroLogger.Log($"Error initializing emulator package definition provider: {ex.Message}", "ERROR");
             }
         }
 
@@ -118,19 +118,19 @@ namespace RetroLauncher
             }
         }
 
-        public IReadOnlyList<EmulatorDefinition> GetAll() => _definitions.AsReadOnly();
+        public IReadOnlyList<EmulatorPackageDefinition> GetAll() => _definitions.AsReadOnly();
 
-        public EmulatorDefinition? GetById(string id)
+        public EmulatorPackageDefinition? GetById(string id)
         {
             return _definitions.FirstOrDefault(d => string.Equals(d.Id, id, StringComparison.OrdinalIgnoreCase));
         }
 
-        public IReadOnlyList<EmulatorDefinition> GetByConsole(string consoleName)
+        public IReadOnlyList<EmulatorPackageDefinition> GetByConsole(string consoleName)
         {
             return _definitions.Where(d => string.Equals(d.ConsoleName, consoleName, StringComparison.OrdinalIgnoreCase)).ToList().AsReadOnly();
         }
 
-        public void Validate(EmulatorDefinition definition)
+        public void Validate(EmulatorPackageDefinition definition)
         {
             if (definition == null) throw new ArgumentNullException(nameof(definition));
 
@@ -155,41 +155,35 @@ namespace RetroLauncher
             }
 
             // 3. Validate Repositories if GitHub-based source
-            if (definition.ReleaseSourceType == EmulatorReleaseSourceType.GitHubLatestRelease ||
-                definition.ReleaseSourceType == EmulatorReleaseSourceType.GitHubReleaseList ||
-                definition.ReleaseSourceType == EmulatorReleaseSourceType.GitHubRollingTag ||
-                definition.ReleaseSourceType == EmulatorReleaseSourceType.GitHubBinaryRepository)
+            if (string.IsNullOrWhiteSpace(definition.GitHubOwner))
             {
-                if (string.IsNullOrWhiteSpace(definition.RepositoryOwner))
-                {
-                    throw new ArgumentException($"RepositoryOwner is required for source type '{definition.ReleaseSourceType}'.");
-                }
-                if (string.IsNullOrWhiteSpace(definition.RepositoryName))
-                {
-                    throw new ArgumentException($"RepositoryName is required for source type '{definition.ReleaseSourceType}'.");
-                }
-                if (!Regex.IsMatch(definition.RepositoryOwner, "^[a-zA-Z0-9-._]+$"))
-                {
-                    throw new ArgumentException($"Invalid RepositoryOwner '{definition.RepositoryOwner}'.");
-                }
-                if (!Regex.IsMatch(definition.RepositoryName, "^[a-zA-Z0-9-._]+$"))
-                {
-                    throw new ArgumentException($"Invalid RepositoryName '{definition.RepositoryName}'.");
-                }
+                throw new ArgumentException("GitHubOwner is required.");
+            }
+            if (string.IsNullOrWhiteSpace(definition.GitHubRepository))
+            {
+                throw new ArgumentException("GitHubRepository is required.");
+            }
+            if (!Regex.IsMatch(definition.GitHubOwner, "^[a-zA-Z0-9-._]+$"))
+            {
+                throw new ArgumentException($"Invalid GitHubOwner '{definition.GitHubOwner}'.");
+            }
+            if (!Regex.IsMatch(definition.GitHubRepository, "^[a-zA-Z0-9-._]+$"))
+            {
+                throw new ArgumentException($"Invalid GitHubRepository '{definition.GitHubRepository}'.");
             }
 
             // 4. Validate Installation Directory (Zip Slip / Absolute check)
-            if (string.IsNullOrWhiteSpace(definition.InstallationDirectoryName))
+            if (string.IsNullOrWhiteSpace(definition.InstallDirectoryName))
             {
-                throw new ArgumentException("InstallationDirectoryName cannot be empty.");
+                throw new ArgumentException("InstallDirectoryName cannot be empty.");
             }
-            if (definition.InstallationDirectoryName.Contains("..") || 
-                Path.IsPathRooted(definition.InstallationDirectoryName) ||
-                definition.InstallationDirectoryName.Contains(":") ||
-                definition.InstallationDirectoryName.StartsWith("/") ||
-                definition.InstallationDirectoryName.StartsWith("\\"))
+            if (definition.InstallDirectoryName.Contains("..") || 
+                Path.IsPathRooted(definition.InstallDirectoryName) ||
+                definition.InstallDirectoryName.Contains(":") ||
+                definition.InstallDirectoryName.StartsWith("/") ||
+                definition.InstallDirectoryName.StartsWith("\\"))
             {
-                throw new ArgumentException($"InstallationDirectoryName '{definition.InstallationDirectoryName}' is unsafe or absolute.");
+                throw new ArgumentException($"InstallDirectoryName '{definition.InstallDirectoryName}' is unsafe or absolute.");
             }
 
             // 5. Validate Executable Candidates (Zip Slip / Absolute check)
@@ -214,96 +208,99 @@ namespace RetroLauncher
             }
 
             // 6. Validate Launch Arguments Template to reject arbitrary executable command execution
-            if (!string.IsNullOrEmpty(definition.LaunchArgumentTemplate))
+            if (!string.IsNullOrEmpty(definition.LaunchArgumentsTemplate))
             {
                 string dangerousPattern = @"[|&;$><`]";
-                if (Regex.IsMatch(definition.LaunchArgumentTemplate, dangerousPattern))
+                if (Regex.IsMatch(definition.LaunchArgumentsTemplate, dangerousPattern))
                 {
-                    throw new ArgumentException("LaunchArgumentTemplate contains dangerous shell metacharacters.");
+                    throw new ArgumentException("LaunchArgumentsTemplate contains dangerous shell metacharacters.");
                 }
             }
         }
 
-        private List<EmulatorDefinition> GetDefaultDefinitions()
+        private List<EmulatorPackageDefinition> GetDefaultDefinitions()
         {
-            return new List<EmulatorDefinition>
+            return new List<EmulatorPackageDefinition>
             {
-                new EmulatorDefinition
+                new EmulatorPackageDefinition
                 {
                     Id = "duckstation",
                     DisplayName = "DuckStation",
                     ConsoleName = "Sony PlayStation 1",
                     Description = "A Sony PlayStation 1 emulator focusing on playability, speed, and long-term maintainability.",
-                    RepositoryOwner = "stenzek",
-                    RepositoryName = "duckstation",
-                    ReleaseSourceType = EmulatorReleaseSourceType.GitHubLatestRelease,
-                    ReleaseChannel = EmulatorReleaseChannel.Stable,
-                    SupportedOperatingSystems = new List<SupportedOperatingSystem> { SupportedOperatingSystem.Windows },
-                    SupportedArchitectures = new List<CpuArchitecture> { CpuArchitecture.X64 },
-                    SupportedRomExtensions = new List<string> { ".bin", ".cue", ".img", ".iso", ".chd", ".m3u", ".pbp" },
-                    InstallationDirectoryName = "Emulators/PS1",
-                    ExecutableCandidates = new List<string> { "duckstation-qt-x64-ReleaseLTCG.exe", "duckstation-nogui-x64-ReleaseLTCG.exe", "duckstation.exe" },
-                    AssetSelectionRules = new List<string> { "duckstation-windows-x64-release.zip" },
-                    ArchiveType = EmulatorArchiveType.Zip,
+                    GitHubOwner = "stenzek",
+                    GitHubRepository = "duckstation",
+                    SupportedPlatforms = new List<string> { "Windows" },
+                    IncludeAssetPatterns = new List<string> { "duckstation-windows-x64-release.zip", "duckstation" },
+                    ExcludeAssetPatterns = new List<string>(),
+                    SupportedArchiveTypes = new List<string> { "zip", "7z" },
+                    ExecutableCandidates = new List<string> { "duckstation-qt-x64-ReleaseLTCG.exe", "duckstation-qt-x64-Release.exe", "duckstation-qt.exe", "duckstation.exe" },
+                    InstallDirectoryName = "Emulators/PS1",
+                    LaunchArgumentsTemplate = "-fullscreen -nogui \"{rom}\"",
                     RequiresBios = true,
+                    BiosDirectoryCandidates = new List<string> { "bios" },
+
+                    // UI Compatibility fields
+                    SupportedRomExtensions = new List<string> { ".bin", ".cue", ".img", ".iso", ".chd", ".m3u", ".pbp" },
                     RequiresFirmware = false,
                     OfficialProjectUrl = "https://github.com/stenzek/duckstation",
                     OfficialDownloadUrl = "https://github.com/stenzek/duckstation/releases",
                     LicenseNoticeUrl = "https://github.com/stenzek/duckstation/blob/master/LICENSE",
-                    LaunchArgumentTemplate = "-fullscreen \"{rom}\"",
                     SupportsPortableMode = true,
                     DefaultEnabled = true
                 },
-                new EmulatorDefinition
+                new EmulatorPackageDefinition
                 {
                     Id = "pcsx2",
                     DisplayName = "PCSX2",
                     ConsoleName = "Sony PlayStation 2",
                     Description = "A Sony PlayStation 2 emulator that aims to replicate the original experience.",
-                    RepositoryOwner = "PCSX2",
-                    RepositoryName = "pcsx2",
-                    ReleaseSourceType = EmulatorReleaseSourceType.GitHubLatestRelease,
-                    ReleaseChannel = EmulatorReleaseChannel.Nightly,
-                    SupportedOperatingSystems = new List<SupportedOperatingSystem> { SupportedOperatingSystem.Windows },
-                    SupportedArchitectures = new List<CpuArchitecture> { CpuArchitecture.X64 },
-                    SupportedRomExtensions = new List<string> { ".iso", ".bin", ".elf", ".chd", ".cso" },
-                    InstallationDirectoryName = "Emulators/PS2",
+                    GitHubOwner = "PCSX2",
+                    GitHubRepository = "pcsx2",
+                    SupportedPlatforms = new List<string> { "Windows" },
+                    IncludeAssetPatterns = new List<string> { "pcsx2-v2.*-windows-x64-Qt.7z", "pcsx2-*-windows-x64-Qt.7z", "pcsx2" },
+                    ExcludeAssetPatterns = new List<string>(),
+                    SupportedArchiveTypes = new List<string> { "7z", "zip" },
                     ExecutableCandidates = new List<string> { "pcsx2-qt.exe", "pcsx2.exe" },
-                    AssetSelectionRules = new List<string> { "pcsx2-v1.7.*-windows-x64-Qt.7z" },
-                    ArchiveType = EmulatorArchiveType.SevenZip,
+                    InstallDirectoryName = "Emulators/PS2",
+                    LaunchArgumentsTemplate = "-fullscreen \"{rom}\"",
                     RequiresBios = true,
+                    BiosDirectoryCandidates = new List<string> { "bios" },
+
+                    // UI Compatibility fields
+                    SupportedRomExtensions = new List<string> { ".iso", ".bin", ".elf", ".chd", ".cso" },
                     RequiresFirmware = false,
                     OfficialProjectUrl = "https://pcsx2.net/",
                     OfficialDownloadUrl = "https://pcsx2.net/downloads/",
                     LicenseNoticeUrl = "https://github.com/PCSX2/pcsx2/blob/master/COPYING.GPLv3",
-                    LaunchArgumentTemplate = "-fullscreen \"{rom}\"",
                     SupportsPortableMode = true,
                     DefaultEnabled = true
                 },
-                new EmulatorDefinition
+                new EmulatorPackageDefinition
                 {
                     Id = "rpcs3",
                     DisplayName = "RPCS3",
                     ConsoleName = "Sony PlayStation 3",
                     Description = "An open-source Sony PlayStation 3 emulator and debugger written in C++.",
-                    RepositoryOwner = "RPCS3",
-                    RepositoryName = "rpcs3-binaries-win",
-                    ReleaseSourceType = EmulatorReleaseSourceType.GitHubBinaryRepository,
-                    ReleaseChannel = EmulatorReleaseChannel.Nightly,
-                    SupportedOperatingSystems = new List<SupportedOperatingSystem> { SupportedOperatingSystem.Windows },
-                    SupportedArchitectures = new List<CpuArchitecture> { CpuArchitecture.X64 },
-                    SupportedRomExtensions = new List<string> { ".bin", ".pkg", ".iso" },
-                    InstallationDirectoryName = "Emulators/PS3",
+                    GitHubOwner = "RPCS3",
+                    GitHubRepository = "rpcs3",
+                    SupportedPlatforms = new List<string> { "Windows" },
+                    IncludeAssetPatterns = new List<string> { "rpcs3-v*_win64.7z", "rpcs3-*_win64.7z", "win64" },
+                    ExcludeAssetPatterns = new List<string>(),
+                    SupportedArchiveTypes = new List<string> { "7z", "zip" },
                     ExecutableCandidates = new List<string> { "rpcs3.exe" },
-                    AssetSelectionRules = new List<string> { "rpcs3-v0.0.*_win64.7z" },
-                    ArchiveType = EmulatorArchiveType.SevenZip,
+                    InstallDirectoryName = "Emulators/PS3",
+                    LaunchArgumentsTemplate = "--fullscreen \"{rom}\"",
                     RequiresBios = false,
+                    BiosDirectoryCandidates = new List<string>(),
+
+                    // UI Compatibility fields
+                    SupportedRomExtensions = new List<string> { ".bin", ".pkg", ".iso" },
                     RequiresFirmware = true,
                     OfficialProjectUrl = "https://rpcs3.net/",
                     OfficialDownloadUrl = "https://rpcs3.net/download",
                     LicenseNoticeUrl = "https://github.com/RPCS3/rpcs3/blob/master/LICENSE",
-                    LaunchArgumentTemplate = "--fullscreen \"{rom}\"",
-                    SupportsPortableMode = true,
+                    SupportsPortableMode = false,
                     DefaultEnabled = true
                 }
             };

@@ -10,7 +10,7 @@ namespace RetroLauncher
         {
             RetroLogger.Log("Starting ReleaseAssetSelector Unit Tests...");
 
-            var provider = new JsonEmulatorDefinitionProvider();
+            var provider = new JsonEmulatorPackageDefinitionProvider();
             var selector = new ReleaseAssetSelector();
 
             // Test Case 1: DuckStation
@@ -93,8 +93,8 @@ namespace RetroLauncher
             // Test Case 4: Ambiguous Match Rejector
             if (duckDef != null)
             {
-                var originalRules = duckDef.AssetSelectionRules;
-                duckDef.AssetSelectionRules = new List<string> { "duckstation-windows-x64-*.zip" };
+                var originalRules = duckDef.IncludeAssetPatterns;
+                duckDef.IncludeAssetPatterns = new List<string> { "duckstation-windows-x64-*.zip" };
 
                 try
                 {
@@ -119,7 +119,7 @@ namespace RetroLauncher
                 }
                 finally
                 {
-                    duckDef.AssetSelectionRules = originalRules;
+                    duckDef.IncludeAssetPatterns = originalRules;
                 }
             }
 

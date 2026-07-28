@@ -125,46 +125,95 @@ namespace RetroLauncher
 
                     // 5. Executable discovery
                     string? matchingExePath = null;
-                    foreach (var candidate in request.ExecutableCandidates)
-                    {
-                        string fullCandidatePath = Path.Combine(activeRoot, candidate);
-                        if (File.Exists(fullCandidatePath))
-                        {
-                            matchingExePath = fullCandidatePath;
-                            break;
-                        }
-                    }
+                    var allExeFiles = Directory.GetFiles(activeRoot, "*.exe", SearchOption.AllDirectories);
 
-                    if (matchingExePath == null)
+                    var validCandidates = new List<(string FullPath, string RelativePath, int Score)>();
+                    var allDiscoveredPaths = new List<string>();
+
+                    foreach (var exeFile in allExeFiles)
                     {
-                        foreach (var candidate in request.ExecutableCandidates)
+                        string relPath = Path.GetRelativePath(activeRoot, exeFile);
+                        allDiscoveredPaths.Add(relPath);
+
+                        string relPathLower = relPath.ToLowerInvariant();
+                        string fileNameLower = Path.GetFileName(exeFile).ToLowerInvariant();
+
+                        // Split components for directory checking
+                        var pathComponents = relPathLower.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+
+                        // Reject if:
+                        // - contains "temp" or "updater" in directory names
+                        // - filename contains "crash" or "uninstall"
+                        bool rejected = false;
+                        foreach (var component in pathComponents)
                         {
-                            var matches = Directory.GetFiles(activeRoot, candidate, SearchOption.AllDirectories);
-                            if (matches.Length > 0)
+                            if (component == "temp" || component == "updater" || component.Contains("temp") || component.Contains("updater"))
                             {
-                                matchingExePath = matches[0];
+                                rejected = true;
                                 break;
                             }
                         }
+
+                        if (fileNameLower.Contains("crash") || fileNameLower.Contains("uninstall") || fileNameLower.Contains("updater") || fileNameLower.Contains("unins"))
+                        {
+                            rejected = true;
+                        }
+
+                        if (rejected)
+                        {
+                            continue;
+                        }
+
+                        // Calculate Score
+                        int score = -9999;
+                        bool matchesCandidate = false;
+                        for (int i = 0; i < request.ExecutableCandidates.Count; i++)
+                        {
+                            // Compare case-insensitively with candidate
+                            string candidate = request.ExecutableCandidates[i].ToLowerInvariant().Replace('\\', '/');
+                            string relPathNormalized = relPathLower.Replace('\\', '/');
+
+                            if (relPathNormalized.EndsWith(candidate) || fileNameLower == candidate)
+                            {
+                                score = 1000 - i;
+                                matchesCandidate = true;
+                                break;
+                            }
+                        }
+
+                        if (request.ExecutableCandidates.Any() && !matchesCandidate)
+                        {
+                            continue;
+                        }
+
+                        // Tie breaker: prefer closer to root (less depth components)
+                        int depth = pathComponents.Length;
+                        score -= depth;
+
+                        validCandidates.Add((exeFile, relPath, score));
                     }
 
-                    // Fallback: look for any .exe in the active root folder
+                    if (validCandidates.Any())
+                    {
+                        // Order by score descending, then by relative path lexicographically ascending
+                        var best = validCandidates
+                            .OrderByDescending(c => c.Score)
+                            .ThenBy(c => c.RelativePath, StringComparer.OrdinalIgnoreCase)
+                            .First();
+                        
+                        matchingExePath = best.FullPath;
+                    }
+
                     if (matchingExePath == null)
                     {
-                        var allExes = Directory.GetFiles(activeRoot, "*.exe", SearchOption.AllDirectories);
-                        if (allExes.Length > 0)
-                        {
-                            matchingExePath = allExes[0];
-                        }
-                    }
-
-                    if (matchingExePath == null && request.ExecutableCandidates.Any())
-                    {
+                        string discoveredList = allDiscoveredPaths.Any() 
+                            ? string.Join(", ", allDiscoveredPaths) 
+                            : "none";
                         return new ArchiveExtractionResult
                         {
                             Success = false,
                             FailureReason = ExtractionFailureReason.NoExecutableFound,
-                            ErrorMessage = "No matching emulator executable was found in the extracted package."
+                            ErrorMessage = $"No matching emulator executable was found in the extracted package. Discovered executables: {discoveredList}"
                         };
                     }
 

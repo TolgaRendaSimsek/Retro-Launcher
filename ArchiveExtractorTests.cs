@@ -172,6 +172,84 @@ namespace RetroLauncher
                 Debug.Assert(res8.FailureReason == ExtractionFailureReason.Cancellation, "Should fail with Cancellation.");
                 RetroLogger.Log("Test Case 8 passed: Cancellation handled successfully.");
 
+                // Test 9: Executable Discovery and Scoring
+                string destDir9 = Path.Combine(tempDir, "dest_scoring");
+                string scoringZip = Path.Combine(tempDir, "scoring.zip");
+
+                if (File.Exists(scoringZip)) File.Delete(scoringZip);
+                using (var fileStream = new FileStream(scoringZip, FileMode.Create))
+                using (var archive = new ZipArchive(fileStream, ZipArchiveMode.Create))
+                {
+                    var entries = new[]
+                    {
+                        ("subdir/updater/pcsx2.exe", "payload"),
+                        ("pcsx2-crash.exe", "payload"),
+                        ("uninstall.exe", "payload"),
+                        ("sub/deep/folder/pcsx2.exe", "payload"),
+                        ("first/pcsx2-qt.exe", "payload"),
+                        ("tie/first/pcsx2-qt.exe", "payload"),
+                        ("other/unknown.exe", "payload")
+                    };
+
+                    foreach (var entry in entries)
+                    {
+                        var zipEntry = archive.CreateEntry(entry.Item1);
+                        using (var es = zipEntry.Open())
+                        using (var writer = new StreamWriter(es))
+                        {
+                            writer.Write(entry.Item2);
+                        }
+                    }
+                }
+
+                var req9 = new ArchiveExtractionRequest
+                {
+                    ArchivePath = scoringZip,
+                    DestinationPath = destDir9,
+                    CancellationToken = CancellationToken.None,
+                    ExecutableCandidates = new List<string> { "pcsx2-qt.exe", "pcsx2.exe" },
+                    PackageId = "test_scoring",
+                    OperationId = "op9"
+                };
+
+                var res9 = await extractor.ExtractAsync(req9);
+                Debug.Assert(res9.Success == true, "Scoring extraction should succeed.");
+                string expectedExe = Path.GetFullPath(Path.Combine(destDir9, "first", "pcsx2-qt.exe"));
+                Debug.Assert(string.Equals(Path.GetFullPath(res9.MainExecutablePath ?? ""), expectedExe, StringComparison.OrdinalIgnoreCase), $"Expected chosen executable: {expectedExe}, but got: {res9.MainExecutablePath}");
+                RetroLogger.Log("Test Case 9 passed: Executable discovery, scoring, and rejection rules validated successfully.");
+
+                // Test 10: Clear Error Message listing discovered files if no match
+                string destDir10 = Path.Combine(tempDir, "dest_no_match");
+                string noMatchZip = Path.Combine(tempDir, "nomatch.zip");
+
+                if (File.Exists(noMatchZip)) File.Delete(noMatchZip);
+                using (var fileStream = new FileStream(noMatchZip, FileMode.Create))
+                using (var archive = new ZipArchive(fileStream, ZipArchiveMode.Create))
+                {
+                    var zipEntry = archive.CreateEntry("some_folder/dummy.exe");
+                    using (var es = zipEntry.Open())
+                    using (var writer = new StreamWriter(es))
+                    {
+                        writer.Write("payload");
+                    }
+                }
+
+                var req10 = new ArchiveExtractionRequest
+                {
+                    ArchivePath = noMatchZip,
+                    DestinationPath = destDir10,
+                    CancellationToken = CancellationToken.None,
+                    ExecutableCandidates = new List<string> { "nonexistent.exe" },
+                    PackageId = "test_nomatch",
+                    OperationId = "op10"
+                };
+
+                var res10 = await extractor.ExtractAsync(req10);
+                Debug.Assert(res10.Success == false, "Extraction should fail when no candidate matches.");
+                Debug.Assert(res10.ErrorMessage != null && res10.ErrorMessage.Contains("Discovered executables:"), "Error message should list discovered executables.");
+                Debug.Assert(res10.ErrorMessage.Contains("dummy.exe"), "Error message should list dummy.exe.");
+                RetroLogger.Log("Test Case 10 passed: Discovered executables error list reporting.");
+
                 RetroLogger.Log("All SecureArchiveExtractor Unit Tests completed successfully!");
             }
             finally

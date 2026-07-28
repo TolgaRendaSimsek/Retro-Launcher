@@ -11,14 +11,14 @@ namespace RetroLauncher
 {
     public class SystemHealthService : ISystemHealthService
     {
-        private readonly IEmulatorDefinitionProvider _definitionProvider;
+        private readonly IEmulatorPackageDefinitionProvider _definitionProvider;
         private readonly IEmulatorUpdateService _updateService;
 
         public SystemHealthService(
-            IEmulatorDefinitionProvider? definitionProvider = null,
+            IEmulatorPackageDefinitionProvider? definitionProvider = null,
             IEmulatorUpdateService? updateService = null)
         {
-            _definitionProvider = definitionProvider ?? new JsonEmulatorDefinitionProvider();
+            _definitionProvider = definitionProvider ?? new JsonEmulatorPackageDefinitionProvider();
             _updateService = updateService ?? new EmulatorUpdateService();
         }
 

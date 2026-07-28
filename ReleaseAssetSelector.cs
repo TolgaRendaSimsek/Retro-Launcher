@@ -2,18 +2,24 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
+using System.Net;
 using System.Text.RegularExpressions;
 
 namespace RetroLauncher
 {
     public enum SelectionConfidence
     {
-        High,
-        Medium,
+        None,
         Low,
-        Ambiguous,
-        None
+        Medium,
+        High,
+        Ambiguous
+    }
+
+    public class CandidateRejection
+    {
+        public string Name { get; set; } = "";
+        public string Reason { get; set; } = "";
     }
 
     public class CandidateScore
@@ -21,12 +27,6 @@ namespace RetroLauncher
         public string Name { get; set; } = "";
         public int Score { get; set; }
         public string Explanation { get; set; } = "";
-    }
-
-    public class CandidateRejection
-    {
-        public string Name { get; set; } = "";
-        public string Reason { get; set; } = "";
     }
 
     public class ReleaseSelectionResult
@@ -43,23 +43,23 @@ namespace RetroLauncher
         public ReleaseAssetInfo? SelectedAsset { get; set; }
         public SelectionConfidence Confidence { get; set; } = SelectionConfidence.None;
         public string Message { get; set; } = "";
-        public List<CandidateScore> Scores { get; set; } = new();
         public List<CandidateRejection> Rejections { get; set; } = new();
+        public List<CandidateScore> Scores { get; set; } = new();
     }
 
     public interface IReleaseSelector
     {
-        ReleaseSelectionResult SelectRelease(EmulatorDefinition definition, IEnumerable<ReleaseInfo> releases);
+        ReleaseSelectionResult SelectRelease(EmulatorPackageDefinition definition, IEnumerable<ReleaseInfo> releases);
     }
 
     public interface IReleaseAssetSelectorNew
     {
-        ReleaseAssetSelectionResult SelectAsset(EmulatorDefinition definition, ReleaseInfo release);
+        ReleaseAssetSelectionResult SelectAsset(EmulatorPackageDefinition definition, ReleaseInfo release);
     }
 
     public class ReleaseSelector : IReleaseSelector
     {
-        public ReleaseSelectionResult SelectRelease(EmulatorDefinition definition, IEnumerable<ReleaseInfo> releases)
+        public ReleaseSelectionResult SelectRelease(EmulatorPackageDefinition definition, IEnumerable<ReleaseInfo> releases)
         {
             var result = new ReleaseSelectionResult();
 
@@ -103,7 +103,7 @@ namespace RetroLauncher
 
     public class ReleaseAssetSelector : IReleaseAssetSelector, IReleaseAssetSelectorNew
     {
-        public ReleaseAssetSelectionResult SelectAsset(EmulatorDefinition definition, ReleaseInfo release)
+        public ReleaseAssetSelectionResult SelectAsset(EmulatorPackageDefinition definition, ReleaseInfo release)
         {
             var result = new ReleaseAssetSelectionResult();
 
@@ -147,15 +147,43 @@ namespace RetroLauncher
                 }
                 if (rejected) continue;
 
-                // 2. Archive format check (ZIP and 7Z only)
-                string ext = Path.GetExtension(asset.Name).ToLower();
-                if (ext != ".zip" && ext != ".7z")
+                // 2. Exclude patterns from definition
+                if (definition.ExcludeAssetPatterns != null && definition.ExcludeAssetPatterns.Any())
                 {
-                    result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "unsupported archive format (only ZIP/7Z allowed)" });
-                    continue;
+                    bool matchedExclude = false;
+                    foreach (var pattern in definition.ExcludeAssetPatterns)
+                    {
+                        if (MatchesPattern(asset.Name, pattern))
+                        {
+                            result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = $"matched exclude asset pattern '{pattern}'" });
+                            matchedExclude = true;
+                            break;
+                        }
+                    }
+                    if (matchedExclude) continue;
                 }
 
-                // 3. browser_download_url validation
+                // 3. Supported Archive format check
+                string ext = Path.GetExtension(asset.Name).ToLower().TrimStart('.');
+                if (definition.SupportedArchiveTypes != null && definition.SupportedArchiveTypes.Any())
+                {
+                    if (!definition.SupportedArchiveTypes.Contains(ext, StringComparer.OrdinalIgnoreCase))
+                    {
+                        result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = $"unsupported archive extension '.{ext}'" });
+                        continue;
+                    }
+                }
+                else
+                {
+                    // Fallback to zip/7z
+                    if (ext != "zip" && ext != "7z")
+                    {
+                        result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "unsupported archive format (only ZIP/7Z allowed)" });
+                        continue;
+                    }
+                }
+
+                // 4. browser_download_url validation
                 if (string.IsNullOrWhiteSpace(asset.DownloadUrl))
                 {
                     result.Rejections.Add(new CandidateRejection { Name = asset.Name, Reason = "empty download URL" });
@@ -187,14 +215,14 @@ namespace RetroLauncher
                     continue;
                 }
 
-                // 4. Calculate Score
+                // 5. Calculate Score
                 int score = 0;
 
                 // Match definition inclusion patterns (glob match)
                 bool matchesRule = false;
-                if (definition.AssetSelectionRules != null && definition.AssetSelectionRules.Any())
+                if (definition.IncludeAssetPatterns != null && definition.IncludeAssetPatterns.Any())
                 {
-                    foreach (var rule in definition.AssetSelectionRules)
+                    foreach (var rule in definition.IncludeAssetPatterns)
                     {
                         if (MatchesPattern(asset.Name, rule))
                         {
@@ -219,7 +247,7 @@ namespace RetroLauncher
                 }
 
                 // Small tie-breaker preference for ZIP over 7Z if scores are equal
-                if (ext == ".zip")
+                if (ext == "zip")
                 {
                     score += 5;
                 }
@@ -254,7 +282,7 @@ namespace RetroLauncher
             return result;
         }
 
-        public AssetSelectionResult SelectAsset(EmulatorDefinition definition, IEnumerable<GitHubRelease> releases)
+        public AssetSelectionResult SelectAsset(EmulatorPackageDefinition definition, IEnumerable<GitHubRelease> releases)
         {
             var releaseList = releases.Select(ConvertToReleaseInfo).ToList();
             var releaseSelector = new ReleaseSelector();

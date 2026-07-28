@@ -12,18 +12,18 @@ namespace RetroLauncher
     {
         private static readonly ConcurrentDictionary<string, EmulatorUpdateInfo> _lastRemoteResults = new();
         
-        private readonly IEmulatorDefinitionProvider _definitionProvider;
+        private readonly IEmulatorPackageDefinitionProvider _definitionProvider;
         private readonly IReleaseProvider _releaseProvider;
         private readonly IReleaseAssetSelector _assetSelector;
         
         public TimeSpan CacheExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
         public EmulatorUpdateService(
-            IEmulatorDefinitionProvider? definitionProvider = null,
+            IEmulatorPackageDefinitionProvider? definitionProvider = null,
             IReleaseProvider? releaseProvider = null,
             IReleaseAssetSelector? assetSelector = null)
         {
-            _definitionProvider = definitionProvider ?? new JsonEmulatorDefinitionProvider();
+            _definitionProvider = definitionProvider ?? new JsonEmulatorPackageDefinitionProvider();
             _releaseProvider = releaseProvider ?? new GitHubReleaseProvider();
             _assetSelector = assetSelector ?? new ReleaseAssetSelector();
             
@@ -121,8 +121,8 @@ namespace RetroLauncher
             {
                 var query = new ReleaseQuery
                 {
-                    Owner = definition.RepositoryOwner,
-                    Repository = definition.RepositoryName,
+                    Owner = definition.GitHubOwner,
+                    Repository = definition.GitHubRepository,
                     Channel = definition.ReleaseChannel == EmulatorReleaseChannel.Stable ? ReleaseChannel.Stable : ReleaseChannel.Preview
                 };
 

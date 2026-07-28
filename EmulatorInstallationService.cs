@@ -11,7 +11,7 @@ namespace RetroLauncher
 {
     public class EmulatorInstallationService : IEmulatorInstallationService
     {
-        private readonly IEmulatorDefinitionProvider _definitionProvider;
+        private readonly IEmulatorPackageDefinitionProvider _definitionProvider;
         private readonly IReleaseProvider _releaseProvider;
         private readonly IReleaseAssetSelector _assetSelector;
         private readonly IDownloadManager _downloadManager;
@@ -19,14 +19,14 @@ namespace RetroLauncher
         private readonly IEmuPackageVerifier _packageVerifier;
 
         public EmulatorInstallationService(
-            IEmulatorDefinitionProvider? definitionProvider = null,
+            IEmulatorPackageDefinitionProvider? definitionProvider = null,
             IReleaseProvider? releaseProvider = null,
             IReleaseAssetSelector? assetSelector = null,
             IDownloadManager? downloadManager = null,
             IArchiveExtractor? archiveExtractor = null,
             IEmuPackageVerifier? packageVerifier = null)
         {
-            _definitionProvider = definitionProvider ?? new JsonEmulatorDefinitionProvider();
+            _definitionProvider = definitionProvider ?? new JsonEmulatorPackageDefinitionProvider();
             _releaseProvider = releaseProvider ?? new GitHubReleaseProvider();
             _assetSelector = assetSelector ?? new ReleaseAssetSelector();
             _downloadManager = downloadManager ?? new DownloadManager();
@@ -85,8 +85,8 @@ namespace RetroLauncher
 
             var query = new ReleaseQuery
             {
-                Owner = definition.RepositoryOwner,
-                Repository = definition.RepositoryName,
+                Owner = definition.GitHubOwner,
+                Repository = definition.GitHubRepository,
                 Channel = definition.ReleaseChannel == EmulatorReleaseChannel.Stable ? ReleaseChannel.Stable : ReleaseChannel.Preview
             };
 
@@ -109,7 +109,7 @@ namespace RetroLauncher
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.ResolvingRelease,
-                    ErrorMessage = $"Unable to retrieve release tag for '{definition.DisplayName}' from repository '{definition.RepositoryOwner}/{definition.RepositoryName}'."
+                    ErrorMessage = $"Unable to retrieve release tag for '{definition.DisplayName}' from repository '{definition.GitHubOwner}/{definition.GitHubRepository}'."
                 };
             }
 
@@ -207,7 +207,7 @@ namespace RetroLauncher
 
             // Step 7: Extract and Deploy (Transactional staging, backup, normalization, and rollback)
             ReportProgress(request.Progress, request.EmulatorId, "Extracting package contents", 80);
-            string finalDestPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, definition.InstallationDirectoryName));
+            string finalDestPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, definition.InstallDirectoryName));
 
             var extractionProgress = new Progress<ArchiveExtractionProgress>(p =>
             {
@@ -287,7 +287,7 @@ namespace RetroLauncher
                 InstalledAt = DateTime.UtcNow,
                 InstallationPath = finalDestPath,
                 ExecutablePath = finalExePath,
-                SourceRepository = $"{definition.RepositoryOwner}/{definition.RepositoryName}",
+                SourceRepository = $"{definition.GitHubOwner}/{definition.GitHubRepository}",
                 SourceAssetName = asset.Name,
                 SourceDownloadUrl = asset.DownloadUrl,
                 DownloadedArchiveSize = asset.Size,
@@ -424,7 +424,7 @@ namespace RetroLauncher
             }
         }
 
-        private static bool UpdateLauncherRegistry(InstalledEmulatorInfo info, EmulatorDefinition definition)
+        private static bool UpdateLauncherRegistry(InstalledEmulatorInfo info, EmulatorPackageDefinition definition)
         {
             try
             {
@@ -432,9 +432,12 @@ namespace RetroLauncher
                 if (emu != null)
                 {
                     emu.InstalledVersion = info.InstalledVersion;
-                    emu.ExecutablePath = Path.GetRelativePath(AppContext.BaseDirectory, info.ExecutablePath);
-                    emu.InstallFolder = Path.GetRelativePath(AppContext.BaseDirectory, info.InstallationPath);
+                    emu.ExecutablePath = Path.GetRelativePath(AppContext.BaseDirectory, info.ExecutablePath).Replace('\\', '/');
+                    emu.InstallFolder = Path.GetRelativePath(AppContext.BaseDirectory, info.InstallationPath).Replace('\\', '/');
                     emu.Status = "Installed";
+                    emu.SelectedAssetName = info.SourceAssetName;
+                    emu.GithubRepository = info.SourceRepository;
+                    emu.InstallationTimestamp = info.InstalledAt;
                     EmulatorManager.Instance.SaveEmulators();
                     RetroLogger.Log($"Updated Launcher Config for '{info.EmulatorId}' to tag '{info.ReleaseTag}'.");
                     return true;

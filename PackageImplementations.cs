@@ -94,12 +94,12 @@ namespace RetroLauncher
             }
 
             // Get configured emulator definition for better rules mapping, or fallback
-            var definitionProvider = new JsonEmulatorDefinitionProvider();
-            var definition = definitionProvider.GetById(repo.ToLower()) ?? new EmulatorDefinition
+            var definitionProvider = new JsonEmulatorPackageDefinitionProvider();
+            var definition = definitionProvider.GetById(repo.ToLower()) ?? new EmulatorPackageDefinition
             {
                 Id = repo.ToLower(),
                 DisplayName = repo,
-                InstallationDirectoryName = $"Emulators/{repo}"
+                InstallDirectoryName = $"Emulators/{repo}"
             };
 
             var selector = new ReleaseAssetSelector();
