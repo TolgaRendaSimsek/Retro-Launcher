@@ -46,6 +46,12 @@ namespace RetroLauncher
 
         public bool PreserveStagingForDiagnostics { get; set; } = false;
         public System.Collections.Generic.List<string> ExecutableCandidates { get; set; } = new();
+
+        // New properties for secure routing and validation
+        public string PackageId { get; set; } = "";
+        public string OperationId { get; set; } = "";
+        public long? ExpectedSize { get; set; }
+        public int TimeoutSeconds { get; set; } = 300; // 5 minutes default
     }
 
     public class ArchiveExtractionResult

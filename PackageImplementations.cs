@@ -195,27 +195,7 @@ namespace RetroLauncher
         }
     }
 
-    public class ZipArchiveExtractor : IArchiveExtractor
-    {
-        public bool CanExtract(string archiveType) => string.Equals(archiveType, "zip", StringComparison.OrdinalIgnoreCase);
 
-        public async Task<ArchiveExtractionResult> ExtractAsync(ArchiveExtractionRequest request)
-        {
-            var secureExtractor = new SecureArchiveExtractor();
-            return await secureExtractor.ExtractAsync(request);
-        }
-    }
-
-    public class SevenZipArchiveExtractor : IArchiveExtractor
-    {
-        public bool CanExtract(string archiveType) => string.Equals(archiveType, "7z", StringComparison.OrdinalIgnoreCase);
-
-        public async Task<ArchiveExtractionResult> ExtractAsync(ArchiveExtractionRequest request)
-        {
-            var secureExtractor = new SecureArchiveExtractor();
-            return await secureExtractor.ExtractAsync(request);
-        }
-    }
 
     public class JsonInstalledPackageRepository : IPackageRepository
     {

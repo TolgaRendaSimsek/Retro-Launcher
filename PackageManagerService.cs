@@ -34,8 +34,7 @@ namespace RetroLauncher
             _verifier = verifier ?? new Sha256PackageVerifier();
             _extractors = extractors?.ToList() ?? new List<IArchiveExtractor>
             {
-                new ZipArchiveExtractor(),
-                new SevenZipArchiveExtractor()
+                new SecureArchiveExtractor()
             };
             _updateService = updateService ?? new PackageUpdateService();
         }
@@ -253,7 +252,10 @@ namespace RetroLauncher
                 DestinationPath = destDir,
                 CancellationToken = token,
                 Progress = new Progress<ArchiveExtractionProgress>(p => progress?.Report(85 + (int)(p.Percentage * 0.10))),
-                ExecutableCandidates = !string.IsNullOrEmpty(package.executablePath) ? new List<string> { package.executablePath } : new List<string>()
+                ExecutableCandidates = !string.IsNullOrEmpty(package.executablePath) ? new List<string> { package.executablePath } : new List<string>(),
+                PackageId = package.id,
+                OperationId = Guid.NewGuid().ToString("N"),
+                ExpectedSize = package.downloadSize > 0 ? package.downloadSize : null
             };
 
             var extractResult = await extractor.ExtractAsync(extractRequest);

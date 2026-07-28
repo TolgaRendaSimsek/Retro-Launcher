@@ -205,31 +205,33 @@ namespace RetroLauncher
 
             string calculatedHash = verifyResult.CalculatedHash ?? "";
 
-            // Step 7: Extract into staging directory
-            ReportProgress(request.Progress, request.EmulatorId, "Extracting files to staging sandbox", 80);
-            string stagingPath = Path.Combine(tempDir, $"staging_{definition.Id}_{Guid.NewGuid():N}");
+            // Step 7: Extract and Deploy (Transactional staging, backup, normalization, and rollback)
+            ReportProgress(request.Progress, request.EmulatorId, "Extracting package contents", 80);
+            string finalDestPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, definition.InstallationDirectoryName));
 
             var extractionProgress = new Progress<ArchiveExtractionProgress>(p =>
             {
-                int pct = 80 + (int)(p.Percentage * 0.10);
+                int pct = 80 + (int)(p.Percentage * 0.15); // Scale extraction progress to 80%-95%
                 ReportProgress(request.Progress, request.EmulatorId, "Extracting package contents", pct);
             });
 
             var extractionReq = new ArchiveExtractionRequest
             {
                 ArchivePath = archivePath,
-                DestinationPath = stagingPath,
+                DestinationPath = finalDestPath,
                 CancellationToken = request.CancellationToken,
                 Progress = extractionProgress,
-                ExecutableCandidates = definition.ExecutableCandidates
+                ExecutableCandidates = definition.ExecutableCandidates,
+                PackageId = definition.Id,
+                OperationId = Guid.NewGuid().ToString("N"),
+                ExpectedSize = asset.Size
             };
 
             var extractionResult = await _archiveExtractor.ExtractAsync(extractionReq);
-            CleanFile(archivePath); // Done with downloaded file
+            CleanFile(archivePath); // Done with downloaded archive file
 
             if (!extractionResult.Success)
             {
-                CleanDirectory(stagingPath);
                 return new PackageInstallResult
                 {
                     Success = false,
@@ -239,111 +241,17 @@ namespace RetroLauncher
                 };
             }
 
-            string stagingExe = extractionResult.MainExecutablePath ?? "";
-            if (string.IsNullOrEmpty(stagingExe) || !File.Exists(stagingExe))
+            string finalExePath = extractionResult.MainExecutablePath ?? "";
+            if (string.IsNullOrEmpty(finalExePath) || !File.Exists(finalExePath))
             {
-                CleanDirectory(stagingPath);
                 return new PackageInstallResult
                 {
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.LocatingExecutable,
-                    ErrorMessage = "Located executable is missing inside staging folder."
+                    ErrorMessage = "Located executable is missing inside deployed folder."
                 };
             }
-
-            // Read version metadata
-            string installedVersion = "Unknown";
-            try
-            {
-                var fileVersion = System.Diagnostics.FileVersionInfo.GetVersionInfo(stagingExe);
-                installedVersion = fileVersion.ProductVersion ?? fileVersion.FileVersion ?? selectedRelease.Tag ?? "Unknown";
-            }
-            catch { }
-
-            // Step 8: Back up existing directory (Transactional rollback)
-            ReportProgress(request.Progress, request.EmulatorId, "Safeguarding existing installation", 90);
-            string finalDestPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, definition.InstallationDirectoryName));
-            string backupPath = Path.Combine(tempDir, $"backup_{definition.Id}_{Guid.NewGuid():N}");
-            bool backedUp = false;
-
-            if (Directory.Exists(finalDestPath))
-            {
-                try
-                {
-                    Directory.Move(finalDestPath, backupPath);
-                    backedUp = true;
-                    RetroLogger.Log($"Backed up existing installation from '{finalDestPath}' to '{backupPath}'");
-                }
-                catch (Exception ex)
-                {
-                    CleanDirectory(stagingPath);
-                    return new PackageInstallResult
-                    {
-                        Success = false,
-                        PackageId = definition.Id,
-                        FailedStage = PackageInstallStage.Registering,
-                        ErrorMessage = $"Failed to back up existing installation directory: {ex.Message}",
-                        Exception = ex
-                    };
-                }
-            }
-
-            // Step 9: Atomically move staging to final destination
-            ReportProgress(request.Progress, request.EmulatorId, "Deploying new installation", 95);
-            bool installed = false;
-            try
-            {
-                Directory.Move(stagingPath, finalDestPath);
-                installed = true;
-            }
-            catch (Exception ex)
-            {
-                RetroLogger.Log($"Failed to move staging directory: {ex.Message}", "ERROR");
-            }
-
-            // Rollback procedure
-            if (!installed)
-            {
-                if (backedUp)
-                {
-                    try
-                    {
-                        if (Directory.Exists(finalDestPath)) Directory.Delete(finalDestPath, true);
-                        Directory.Move(backupPath, finalDestPath);
-                    }
-                    catch (Exception rollEx)
-                    {
-                        RetroLogger.Log($"CRITICAL: Rollback failed! {rollEx.Message}", "ERROR");
-                        return new PackageInstallResult
-                        {
-                            Success = false,
-                            PackageId = definition.Id,
-                            FailedStage = PackageInstallStage.Registering,
-                            ErrorMessage = $"Staging deployment failed and rollback restore failed: {rollEx.Message}",
-                            Exception = rollEx
-                        };
-                    }
-                }
-                CleanDirectory(stagingPath);
-                return new PackageInstallResult
-                {
-                    Success = false,
-                    PackageId = definition.Id,
-                    FailedStage = PackageInstallStage.Registering,
-                    ErrorMessage = "Deployment phase failed: could not copy files to target directory."
-                };
-            }
-
-            // Restore user configurations and saves from backup
-            if (backedUp && Directory.Exists(backupPath))
-            {
-                RestoreUserFolders(backupPath, finalDestPath);
-            }
-
-            // Validate final deployment executable
-            string relativeExe = Path.GetRelativePath(stagingPath, stagingExe);
-            string finalExePath = Path.Combine(finalDestPath, relativeExe);
 
             // Security & correctness check: Ensure executable resides inside the destination folder
             string canonicalDest = Path.GetFullPath(finalDestPath) + Path.DirectorySeparatorChar;
@@ -351,13 +259,6 @@ namespace RetroLauncher
 
             if (!canonicalExe.StartsWith(canonicalDest, StringComparison.OrdinalIgnoreCase))
             {
-                // Rollback
-                try
-                {
-                    Directory.Delete(finalDestPath, true);
-                    if (backedUp) Directory.Move(backupPath, finalDestPath);
-                }
-                catch { }
                 return new PackageInstallResult
                 {
                     Success = false,
@@ -367,23 +268,14 @@ namespace RetroLauncher
                 };
             }
 
-            if (!File.Exists(finalExePath))
+            // Read version metadata
+            string installedVersion = "Unknown";
+            try
             {
-                // Rollback since executable validation failed
-                try
-                {
-                    Directory.Delete(finalDestPath, true);
-                    if (backedUp) Directory.Move(backupPath, finalDestPath);
-                }
-                catch { }
-                return new PackageInstallResult
-                {
-                    Success = false,
-                    PackageId = definition.Id,
-                    FailedStage = PackageInstallStage.LocatingExecutable,
-                    ErrorMessage = "Deployment validation failed: executable missing at destination path."
-                };
+                var fileVersion = System.Diagnostics.FileVersionInfo.GetVersionInfo(finalExePath);
+                installedVersion = fileVersion.ProductVersion ?? fileVersion.FileVersion ?? selectedRelease.Tag ?? "Unknown";
             }
+            catch { }
 
             // Step 10: Update registry records
             var infoRecord = new InstalledEmulatorInfo
@@ -411,13 +303,6 @@ namespace RetroLauncher
             bool registrySaved = UpdateLauncherRegistry(infoRecord, definition);
             if (!registrySaved)
             {
-                // Rollback
-                try
-                {
-                    Directory.Delete(finalDestPath, true);
-                    if (backedUp) Directory.Move(backupPath, finalDestPath);
-                }
-                catch { }
                 return new PackageInstallResult
                 {
                     Success = false,
@@ -425,12 +310,6 @@ namespace RetroLauncher
                     FailedStage = PackageInstallStage.Registering,
                     ErrorMessage = "Failed to update and save the emulator registration in the local config registry."
                 };
-            }
-
-            // Cleanup rollback folder
-            if (backedUp && Directory.Exists(backupPath))
-            {
-                CleanDirectory(backupPath);
             }
 
             ReportProgress(request.Progress, request.EmulatorId, "Installation complete", 100);

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,6 +21,7 @@ namespace RetroLauncher
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
 
+            // 1. Pre-Extraction Archive Validation
             if (!File.Exists(request.ArchivePath))
             {
                 return new ArchiveExtractionResult
@@ -30,278 +32,685 @@ namespace RetroLauncher
                 };
             }
 
-            string stagingDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", $"staging_{Guid.NewGuid():N}");
+            var fileInfo = new FileInfo(request.ArchivePath);
+            if (fileInfo.Length <= 0)
+            {
+                return new ArchiveExtractionResult
+                {
+                    Success = false,
+                    FailureReason = ExtractionFailureReason.InvalidArchive,
+                    ErrorMessage = "Archive file is empty (size is 0)."
+                };
+            }
+
+            // Verify expected size if provided
+            if (request.ExpectedSize.HasValue && request.ExpectedSize.Value > 0)
+            {
+                if (fileInfo.Length != request.ExpectedSize.Value)
+                {
+                    return new ArchiveExtractionResult
+                    {
+                        Success = false,
+                        FailureReason = ExtractionFailureReason.InvalidArchive,
+                        ErrorMessage = $"Downloaded file size ({fileInfo.Length} bytes) does not match expected size ({request.ExpectedSize.Value} bytes)."
+                    };
+                }
+            }
+
+            string extension = Path.GetExtension(request.ArchivePath).ToLower();
+            string archiveType = (extension == ".7z") ? "7z" : "zip";
+
+            // Verify signature
+            if (!ValidateArchiveSignature(request.ArchivePath, archiveType))
+            {
+                return new ArchiveExtractionResult
+                {
+                    Success = false,
+                    FailureReason = ExtractionFailureReason.InvalidArchive,
+                    ErrorMessage = $"Invalid signature: File does not match expected {archiveType.ToUpper()} format magic bytes."
+                };
+            }
+
+            // 2. Set up staging sandbox and backup directories
+            string packageId = string.IsNullOrWhiteSpace(request.PackageId) ? "default" : request.PackageId;
+            string operationId = string.IsNullOrWhiteSpace(request.OperationId) ? Guid.NewGuid().ToString("N") : request.OperationId;
+
+            string rootTempDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp", "install", packageId, operationId);
+            string stagingDir = Path.Combine(rootTempDir, "staging");
+            string backupDir = Path.Combine(rootTempDir, "backup");
             string stagingCanonical = Path.GetFullPath(stagingDir) + Path.DirectorySeparatorChar;
 
-            try
+            bool backedUp = false;
+            bool deployed = false;
+
+            // 3. Extraction Timeout and Cancellation Wrapper
+            int timeoutSeconds = request.TimeoutSeconds > 0 ? request.TimeoutSeconds : 300;
+            using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
+            using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(request.CancellationToken, timeoutCts.Token))
             {
-                Directory.CreateDirectory(stagingDir);
-
-                // Run parsing and extraction in a background thread to prevent UI freezing
-                return await Task.Run(() =>
+                var token = linkedCts.Token;
+                try
                 {
-                    using (var archive = ArchiveFactory.OpenArchive(request.ArchivePath, new SharpCompress.Readers.ReaderOptions()))
+                    if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, true);
+                    Directory.CreateDirectory(stagingDir);
+
+                    // Perform the actual extraction on a background thread to keep UI responsive
+                    ArchiveExtractionResult extractResult = await Task.Run<ArchiveExtractionResult>(async () =>
                     {
-                        // 1. Enforce Pre-Extraction Security Limit Checks (Archive Bomb Defense)
-                        int fileCount = 0;
-                        long totalUncompressedSize = 0;
-
-                        foreach (var entry in archive.Entries)
+                        if (string.Equals(archiveType, "zip", StringComparison.OrdinalIgnoreCase))
                         {
-                            if (entry.IsDirectory) continue;
-
-                            fileCount++;
-                            totalUncompressedSize += entry.Size;
-
-                            if (fileCount > request.MaxFileCount)
-                            {
-                                return new ArchiveExtractionResult
-                                {
-                                    Success = false,
-                                    FailureReason = ExtractionFailureReason.LimitExceededFileCount,
-                                    ErrorMessage = $"Archive contains too many files (Limit: {request.MaxFileCount})."
-                                };
-                            }
-
-                            if (entry.Size > request.MaxSingleFileSize)
-                            {
-                                return new ArchiveExtractionResult
-                                {
-                                    Success = false,
-                                    FailureReason = ExtractionFailureReason.LimitExceededSingleFileSize,
-                                    ErrorMessage = $"File '{entry.Key}' size exceeds the single-file extraction limit ({entry.Size} > {request.MaxSingleFileSize} bytes)."
-                                };
-                            }
-
-                            if (entry.CompressedSize > 0)
-                            {
-                                double ratio = (double)entry.Size / entry.CompressedSize;
-                                if (ratio > request.MaxCompressionRatio)
-                                {
-                                    return new ArchiveExtractionResult
-                                    {
-                                        Success = false,
-                                        FailureReason = ExtractionFailureReason.LimitExceededCompressionRatio,
-                                        ErrorMessage = $"File '{entry.Key}' exceeds maximum permitted compression ratio ({ratio:F2}x > {request.MaxCompressionRatio}x)."
-                                    };
-                                }
-                            }
+                            return await ExtractZipAsync(request, stagingDir, stagingCanonical, token);
                         }
-
-                        if (totalUncompressedSize > request.MaxTotalSize)
+                        else
                         {
-                            return new ArchiveExtractionResult
-                            {
-                                Success = false,
-                                FailureReason = ExtractionFailureReason.LimitExceededTotalSize,
-                                ErrorMessage = $"Archive uncompressed size exceeds limit ({totalUncompressedSize} > {request.MaxTotalSize} bytes)."
-                            };
+                            return await Extract7zAsync(request, stagingDir, stagingCanonical, token);
                         }
+                    }, token);
 
-                        // 2. Perform Extraction into Staging Sandbox
-                        int filesExtracted = 0;
-                        long bytesExtracted = 0;
+                    if (!extractResult.Success)
+                    {
+                        return extractResult;
+                    }
 
-                        foreach (var entry in archive.Entries)
+                    // 4. Normalization of redundant single top-level directory
+                    string activeRoot = stagingDir;
+                    var rootFiles = Directory.GetFiles(stagingDir);
+                    var rootDirs = Directory.GetDirectories(stagingDir);
+
+                    if (rootFiles.Length == 0 && rootDirs.Length == 1)
+                    {
+                        activeRoot = rootDirs[0];
+                        RetroLogger.Log($"Nested top-level root folder detected in archive: '{activeRoot}'");
+                    }
+
+                    // 5. Executable discovery
+                    string? matchingExePath = null;
+                    foreach (var candidate in request.ExecutableCandidates)
+                    {
+                        string fullCandidatePath = Path.Combine(activeRoot, candidate);
+                        if (File.Exists(fullCandidatePath))
                         {
-                            request.CancellationToken.ThrowIfCancellationRequested();
-
-                            // Reject symbolic links to block symlink attacks
-                            if (entry.LinkTarget != null)
-                            {
-                                return new ArchiveExtractionResult
-                                {
-                                    Success = false,
-                                    FailureReason = ExtractionFailureReason.UnsafeSymbolicLink,
-                                    ErrorMessage = $"Archive entry '{entry.Key}' is an unsafe symbolic link, which is disallowed for security."
-                                };
-                            }
-
-                            string entryKey = entry.Key ?? "";
-                            if (string.IsNullOrEmpty(entryKey))
-                            {
-                                continue;
-                            }
-
-                            // Security: Block absolute, rooted, or drive-qualified paths
-                            if (Path.IsPathRooted(entryKey) || entryKey.Contains(":") || entryKey.StartsWith("/") || entryKey.StartsWith("\\"))
-                            {
-                                return new ArchiveExtractionResult
-                                {
-                                    Success = false,
-                                    FailureReason = ExtractionFailureReason.PathTraversalAttempt,
-                                    ErrorMessage = $"Archive entry '{entryKey}' has an absolute or rooted path, which is disallowed for security."
-                                };
-                            }
-
-                            // Security: Zip Slip check
-                            string fullTargetPath = Path.GetFullPath(Path.Combine(stagingDir, entryKey));
-                            if (!fullTargetPath.StartsWith(stagingCanonical, StringComparison.OrdinalIgnoreCase))
-                            {
-                                return new ArchiveExtractionResult
-                                {
-                                    Success = false,
-                                    FailureReason = ExtractionFailureReason.PathTraversalAttempt,
-                                    ErrorMessage = $"Security Alert: Path traversal attempt detected! Entry '{entryKey}' targets a path outside staging directory."
-                                };
-                            }
-
-                            if (entry.IsDirectory)
-                            {
-                                Directory.CreateDirectory(fullTargetPath);
-                                continue;
-                            }
-
-                            string? parentDir = Path.GetDirectoryName(fullTargetPath);
-                            if (parentDir != null && !Directory.Exists(parentDir))
-                            {
-                                Directory.CreateDirectory(parentDir);
-                            }
-
-                            // Streaming extraction copy
-                            using (var entryStream = entry.OpenEntryStream())
-                            using (var targetFileStream = new FileStream(fullTargetPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                            {
-                                var buffer = new byte[8192];
-                                int bytesRead;
-                                while ((bytesRead = entryStream.Read(buffer, 0, buffer.Length)) > 0)
-                                {
-                                    request.CancellationToken.ThrowIfCancellationRequested();
-                                    targetFileStream.Write(buffer, 0, bytesRead);
-                                    bytesExtracted += bytesRead;
-                                }
-                            }
-
-                            filesExtracted++;
-
-                            if (request.Progress != null)
-                            {
-                                int percent = totalUncompressedSize > 0
-                                    ? (int)((double)bytesExtracted / totalUncompressedSize * 100)
-                                    : (int)((double)filesExtracted / fileCount * 100);
-
-                                request.Progress.Report(new ArchiveExtractionProgress
-                                {
-                                    FilesExtracted = filesExtracted,
-                                    TotalFiles = fileCount,
-                                    BytesExtracted = bytesExtracted,
-                                    TotalBytes = totalUncompressedSize,
-                                    Percentage = percent,
-                                    CurrentFileName = entryKey
-                                });
-                            }
+                            matchingExePath = fullCandidatePath;
+                            break;
                         }
+                    }
 
-                        // 3. Normalize structure & Find Executable candidate
-                        string activeRoot = stagingDir;
-                        var rootFiles = Directory.GetFiles(stagingDir);
-                        var rootDirs = Directory.GetDirectories(stagingDir);
-
-                        // If exactly one folder and no files, drill down
-                        if (rootFiles.Length == 0 && rootDirs.Length == 1)
-                        {
-                            activeRoot = rootDirs[0];
-                            RetroLogger.Log($"Nested root folder detected in archive: {activeRoot}");
-                        }
-
-                        string? matchingExePath = null;
+                    if (matchingExePath == null)
+                    {
                         foreach (var candidate in request.ExecutableCandidates)
                         {
-                            string fullCandidatePath = Path.Combine(activeRoot, candidate);
-                            if (File.Exists(fullCandidatePath))
+                            var matches = Directory.GetFiles(activeRoot, candidate, SearchOption.AllDirectories);
+                            if (matches.Length > 0)
                             {
-                                matchingExePath = fullCandidatePath;
+                                matchingExePath = matches[0];
                                 break;
                             }
                         }
+                    }
 
-                        // Recursively search for candidates if not found at root
-                        if (matchingExePath == null)
+                    // Fallback: look for any .exe in the active root folder
+                    if (matchingExePath == null)
+                    {
+                        var allExes = Directory.GetFiles(activeRoot, "*.exe", SearchOption.AllDirectories);
+                        if (allExes.Length > 0)
                         {
-                            foreach (var candidate in request.ExecutableCandidates)
-                            {
-                                var matches = Directory.GetFiles(activeRoot, candidate, SearchOption.AllDirectories);
-                                if (matches.Length > 0)
-                                {
-                                    matchingExePath = matches[0];
-                                    break;
-                                }
-                            }
+                            matchingExePath = allExes[0];
                         }
+                    }
 
-                        if (matchingExePath == null)
+                    if (matchingExePath == null && request.ExecutableCandidates.Any())
+                    {
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.NoExecutableFound,
+                            ErrorMessage = "No matching emulator executable was found in the extracted package."
+                        };
+                    }
+
+                    // 6. Transactional Deployment to request.DestinationPath
+                    string destDir = Path.GetFullPath(request.DestinationPath);
+
+                    // Backup existing installation
+                    if (Directory.Exists(destDir))
+                    {
+                        try
+                        {
+                            if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true);
+                            Directory.Move(destDir, backupDir);
+                            backedUp = true;
+                            RetroLogger.Log($"Backed up existing installation to backup path '{backupDir}'");
+                        }
+                        catch (Exception ex)
                         {
                             return new ArchiveExtractionResult
                             {
                                 Success = false,
-                                FailureReason = ExtractionFailureReason.NoExecutableFound,
-                                ErrorMessage = "No matching emulator executable was found in the extracted package."
+                                FailureReason = ExtractionFailureReason.StagingCleanupFailed,
+                                ErrorMessage = $"Failed to back up existing installation directory: {ex.Message}"
+                            };
+                        }
+                    }
+
+                    // Move normalized staging files to target directory
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(destDir)!);
+                        Directory.Move(activeRoot, destDir);
+                        deployed = true;
+                        RetroLogger.Log($"Deployed staging package content to destination '{destDir}'");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Roll back immediately if target move fails
+                        if (backedUp)
+                        {
+                            try
+                            {
+                                if (Directory.Exists(destDir)) Directory.Delete(destDir, true);
+                                Directory.Move(backupDir, destDir);
+                            }
+                            catch (Exception rollEx)
+                            {
+                                RetroLogger.Log($"CRITICAL: Rollback failed during deployment failure! {rollEx.Message}", "ERROR");
+                            }
+                        }
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.ExtractionException,
+                            ErrorMessage = $"Staging deployment phase failed: {ex.Message}"
+                        };
+                    }
+
+                    // Restore configurations/saves from backup
+                    if (backedUp && Directory.Exists(backupDir))
+                    {
+                        RestoreUserFolders(backupDir, destDir);
+                        CleanDirectory(backupDir);
+                    }
+
+                    // Locate final exe path relative to target
+                    string finalExePath = "";
+                    if (matchingExePath != null)
+                    {
+                        string relativeExe = Path.GetRelativePath(activeRoot, matchingExePath);
+                        finalExePath = Path.Combine(destDir, relativeExe);
+                    }
+
+                    return new ArchiveExtractionResult
+                    {
+                        Success = true,
+                        ExtractedRootPath = destDir,
+                        MainExecutablePath = finalExePath
+                    };
+                }
+                catch (OperationCanceledException)
+                {
+                    // Roll back if cancellation occurred during deployment
+                    if (backedUp && !deployed)
+                    {
+                        try
+                        {
+                            if (Directory.Exists(request.DestinationPath)) Directory.Delete(request.DestinationPath, true);
+                            Directory.Move(backupDir, request.DestinationPath);
+                        }
+                        catch { }
+                    }
+
+                    if (request.CancellationToken.IsCancellationRequested)
+                    {
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.Cancellation,
+                            ErrorMessage = "Extraction cancelled by user."
+                        };
+                    }
+                    else
+                    {
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.Cancellation,
+                            ErrorMessage = "Extraction timed out."
+                        };
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Roll back on general exceptions
+                    if (backedUp && !deployed)
+                    {
+                        try
+                        {
+                            if (Directory.Exists(request.DestinationPath)) Directory.Delete(request.DestinationPath, true);
+                            Directory.Move(backupDir, request.DestinationPath);
+                        }
+                        catch { }
+                    }
+
+                    return new ArchiveExtractionResult
+                    {
+                        Success = false,
+                        FailureReason = ExtractionFailureReason.ExtractionException,
+                        ErrorMessage = $"Archive extraction error: {ex.Message}"
+                    };
+                }
+                finally
+                {
+                    // Staging and temp folder cleanup
+                    CleanDirectory(rootTempDir);
+                }
+            }
+        }
+
+        private static async Task<ArchiveExtractionResult> ExtractZipAsync(ArchiveExtractionRequest request, string stagingDir, string stagingCanonical, CancellationToken token)
+        {
+            using (var fileStream = new FileStream(request.ArchivePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var zip = new ZipArchive(fileStream, ZipArchiveMode.Read))
+            {
+                int fileCount = zip.Entries.Count;
+                if (fileCount > request.MaxFileCount)
+                {
+                    return new ArchiveExtractionResult
+                    {
+                        Success = false,
+                        FailureReason = ExtractionFailureReason.LimitExceededFileCount,
+                        ErrorMessage = $"Archive contains too many files (Limit: {request.MaxFileCount})."
+                    };
+                }
+
+                long totalUncompressedSize = 0;
+                foreach (var entry in zip.Entries)
+                {
+                    totalUncompressedSize += entry.Length;
+                    if (entry.Length > request.MaxSingleFileSize)
+                    {
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.LimitExceededSingleFileSize,
+                            ErrorMessage = $"File '{entry.FullName}' size exceeds single-file extraction limit."
+                        };
+                    }
+
+                    if (entry.CompressedLength > 0)
+                    {
+                        double ratio = (double)entry.Length / entry.CompressedLength;
+                        if (ratio > request.MaxCompressionRatio)
+                        {
+                            return new ArchiveExtractionResult
+                            {
+                                Success = false,
+                                FailureReason = ExtractionFailureReason.LimitExceededCompressionRatio,
+                                ErrorMessage = $"File '{entry.FullName}' exceeds compression ratio limits."
+                            };
+                        }
+                    }
+                }
+
+                if (totalUncompressedSize > request.MaxTotalSize)
+                {
+                    return new ArchiveExtractionResult
+                    {
+                        Success = false,
+                        FailureReason = ExtractionFailureReason.LimitExceededTotalSize,
+                        ErrorMessage = $"Archive uncompressed size exceeds total size limit."
+                    };
+                }
+
+                int filesExtracted = 0;
+                long bytesExtracted = 0;
+
+                foreach (var entry in zip.Entries)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    string entryKey = entry.FullName;
+                    if (string.IsNullOrEmpty(entryKey)) continue;
+
+                    // Security check: Reject absolute paths, root identifiers, or directory escapes
+                    if (Path.IsPathRooted(entryKey) || entryKey.Contains(":") || entryKey.StartsWith("/") || entryKey.StartsWith("\\"))
+                    {
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.PathTraversalAttempt,
+                            ErrorMessage = $"Absolute or rooted path rejected: '{entryKey}'."
+                        };
+                    }
+
+                    string fullTargetPath = Path.GetFullPath(Path.Combine(stagingDir, entryKey));
+                    if (!fullTargetPath.StartsWith(stagingCanonical, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.PathTraversalAttempt,
+                            ErrorMessage = $"Security Alert: Path traversal attempt detected! Entry '{entryKey}' escapes staging directory."
+                        };
+                    }
+
+                    if (entryKey.EndsWith("/") || entryKey.EndsWith("\\"))
+                    {
+                        Directory.CreateDirectory(fullTargetPath);
+                        continue;
+                    }
+
+                    string? parentDir = Path.GetDirectoryName(fullTargetPath);
+                    if (parentDir != null && !Directory.Exists(parentDir))
+                    {
+                        Directory.CreateDirectory(parentDir);
+                    }
+
+                    using (var entryStream = entry.Open())
+                    using (var targetFileStream = new FileStream(fullTargetPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        var buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = await entryStream.ReadAsync(buffer, 0, buffer.Length, token)) > 0)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            await targetFileStream.WriteAsync(buffer, 0, bytesRead, token);
+                            bytesExtracted += bytesRead;
+                        }
+                    }
+
+                    filesExtracted++;
+
+                    if (request.Progress != null)
+                    {
+                        int percent = totalUncompressedSize > 0
+                            ? (int)((double)bytesExtracted / totalUncompressedSize * 100)
+                            : (int)((double)filesExtracted / fileCount * 100);
+
+                        request.Progress.Report(new ArchiveExtractionProgress
+                        {
+                            FilesExtracted = filesExtracted,
+                            TotalFiles = fileCount,
+                            BytesExtracted = bytesExtracted,
+                            TotalBytes = totalUncompressedSize,
+                            Percentage = Math.Min(percent, 100),
+                            CurrentFileName = entryKey
+                        });
+                    }
+                }
+            }
+
+            return new ArchiveExtractionResult { Success = true };
+        }
+
+        private static async Task<ArchiveExtractionResult> Extract7zAsync(ArchiveExtractionRequest request, string stagingDir, string stagingCanonical, CancellationToken token)
+        {
+            try
+            {
+                using (var fileStream = new FileStream(request.ArchivePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var archive = ArchiveFactory.OpenArchive(fileStream))
+                {
+                    if (archive.Entries.Any(e => e.IsEncrypted))
+                    {
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.InvalidArchive,
+                            ErrorMessage = "Archive is encrypted/password-protected."
+                        };
+                    }
+
+                    int fileCount = archive.Entries.Count();
+                    if (fileCount > request.MaxFileCount)
+                    {
+                        return new ArchiveExtractionResult
+                        {
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.LimitExceededFileCount,
+                            ErrorMessage = $"Archive contains too many files (Limit: {request.MaxFileCount})."
+                        };
+                    }
+
+                    long totalUncompressedSize = 0;
+                    foreach (var entry in archive.Entries)
+                    {
+                        if (entry.IsDirectory) continue;
+
+                        totalUncompressedSize += entry.Size;
+                        if (entry.Size > request.MaxSingleFileSize)
+                        {
+                            return new ArchiveExtractionResult
+                            {
+                                Success = false,
+                                FailureReason = ExtractionFailureReason.LimitExceededSingleFileSize,
+                                ErrorMessage = $"File '{entry.Key}' size exceeds single-file extraction limit."
                             };
                         }
 
-                        // 4. Safe Copy to Destination (preserve bios, saves, configs)
-                        string destDir = request.DestinationPath;
-                        if (!Directory.Exists(destDir))
+                        if (entry.CompressedSize > 0)
                         {
-                            Directory.CreateDirectory(destDir);
+                            double ratio = (double)entry.Size / entry.CompressedSize;
+                            if (ratio > request.MaxCompressionRatio)
+                            {
+                                return new ArchiveExtractionResult
+                                {
+                                    Success = false,
+                                    FailureReason = ExtractionFailureReason.LimitExceededCompressionRatio,
+                                    ErrorMessage = $"File '{entry.Key}' exceeds compression ratio limits."
+                                };
+                            }
                         }
+                    }
 
-                        CopyDirectoryPreservingUserFolders(activeRoot, destDir);
-
-                        // Locate final relative exe path inside destination
-                        string relativeExePath = Path.GetRelativePath(activeRoot, matchingExePath);
-                        string finalExePath = Path.Combine(destDir, relativeExePath);
-
+                    if (totalUncompressedSize > request.MaxTotalSize)
+                    {
                         return new ArchiveExtractionResult
                         {
-                            Success = true,
-                            ExtractedRootPath = destDir,
-                            MainExecutablePath = finalExePath
+                            Success = false,
+                            FailureReason = ExtractionFailureReason.LimitExceededTotalSize,
+                            ErrorMessage = $"Archive uncompressed size exceeds total size limit."
                         };
                     }
-                }, request.CancellationToken);
+
+                    int filesExtracted = 0;
+                    long bytesExtracted = 0;
+
+                    foreach (var entry in archive.Entries)
+                    {
+                        token.ThrowIfCancellationRequested();
+
+                        // Reject symbolic links to block symlink attacks
+                        if (entry.LinkTarget != null)
+                        {
+                            return new ArchiveExtractionResult
+                            {
+                                Success = false,
+                                FailureReason = ExtractionFailureReason.UnsafeSymbolicLink,
+                                ErrorMessage = $"Archive entry '{entry.Key}' is an unsafe symbolic link, which is disallowed for security."
+                            };
+                        }
+
+                        string entryKey = entry.Key ?? "";
+                        if (string.IsNullOrEmpty(entryKey)) continue;
+
+                        // Security check: Absolute/rooted checks
+                        if (Path.IsPathRooted(entryKey) || entryKey.Contains(":") || entryKey.StartsWith("/") || entryKey.StartsWith("\\"))
+                        {
+                            return new ArchiveExtractionResult
+                            {
+                                Success = false,
+                                FailureReason = ExtractionFailureReason.PathTraversalAttempt,
+                                ErrorMessage = $"Absolute or rooted path rejected: '{entryKey}'."
+                            };
+                        }
+
+                        string fullTargetPath = Path.GetFullPath(Path.Combine(stagingDir, entryKey));
+                        if (!fullTargetPath.StartsWith(stagingCanonical, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return new ArchiveExtractionResult
+                            {
+                                Success = false,
+                                FailureReason = ExtractionFailureReason.PathTraversalAttempt,
+                                ErrorMessage = $"Security Alert: Path traversal attempt detected! Entry '{entryKey}' escapes staging directory."
+                            };
+                        }
+
+                        if (entry.IsDirectory)
+                        {
+                            Directory.CreateDirectory(fullTargetPath);
+                            continue;
+                        }
+
+                        string? parentDir = Path.GetDirectoryName(fullTargetPath);
+                        if (parentDir != null && !Directory.Exists(parentDir))
+                        {
+                            Directory.CreateDirectory(parentDir);
+                        }
+
+                        using (var entryStream = entry.OpenEntryStream())
+                        using (var targetFileStream = new FileStream(fullTargetPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                        {
+                            var buffer = new byte[8192];
+                            int bytesRead;
+                            while ((bytesRead = await Task.Run(() => entryStream.Read(buffer, 0, buffer.Length), token)) > 0)
+                            {
+                                token.ThrowIfCancellationRequested();
+                                await targetFileStream.WriteAsync(buffer, 0, bytesRead, token);
+                                bytesExtracted += bytesRead;
+                            }
+                        }
+
+                        filesExtracted++;
+
+                        if (request.Progress != null)
+                        {
+                            int percent = totalUncompressedSize > 0
+                                ? (int)((double)bytesExtracted / totalUncompressedSize * 100)
+                                : (int)((double)filesExtracted / fileCount * 100);
+
+                            request.Progress.Report(new ArchiveExtractionProgress
+                            {
+                                FilesExtracted = filesExtracted,
+                                TotalFiles = fileCount,
+                                BytesExtracted = bytesExtracted,
+                                TotalBytes = totalUncompressedSize,
+                                Percentage = Math.Min(percent, 100),
+                                CurrentFileName = entryKey
+                            });
+                        }
+                    }
+                }
             }
-            catch (OperationCanceledException)
+            catch (CryptographicException)
             {
                 return new ArchiveExtractionResult
                 {
                     Success = false,
-                    FailureReason = ExtractionFailureReason.Cancellation,
-                    ErrorMessage = "Extraction cancelled by user."
+                    FailureReason = ExtractionFailureReason.InvalidArchive,
+                    ErrorMessage = "Archive is encrypted/password-protected."
                 };
             }
-            catch (Exception ex)
+            catch (ArchiveException ex)
             {
                 return new ArchiveExtractionResult
                 {
                     Success = false,
-                    FailureReason = ExtractionFailureReason.ExtractionException,
-                    ErrorMessage = $"Extraction exception occurred: {ex.Message}"
+                    FailureReason = ExtractionFailureReason.InvalidArchive,
+                    ErrorMessage = $"Unsupported or invalid 7z archive: {ex.Message}"
                 };
             }
-            finally
+
+            return new ArchiveExtractionResult { Success = true };
+        }
+
+        private static bool ValidateArchiveSignature(string filePath, string archiveType)
+        {
+            try
             {
-                // Staging cleanup
-                if (!request.PreserveStagingForDiagnostics && Directory.Exists(stagingDir))
+                byte[] buffer = new byte[6];
+                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                    if (bytesRead < 4) return false;
+                }
+
+                if (string.Equals(archiveType, "zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    // PK\x03\x04
+                    return buffer[0] == 0x50 && buffer[1] == 0x4B && buffer[2] == 0x03 && buffer[3] == 0x04;
+                }
+                else if (string.Equals(archiveType, "7z", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 7z\xBC\xAF\x27\x1C
+                    if (buffer.Length < 6) return false;
+                    return buffer[0] == 0x37 && buffer[1] == 0x7A && buffer[2] == 0xBC && buffer[3] == 0xAF && buffer[4] == 0x27 && buffer[5] == 0x1C;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+            return false;
+        }
+
+        private static void RestoreUserFolders(string sourceBackup, string destFolder)
+        {
+            string[] userDirs = { 
+                "bios", "saves", "configs", "screenshots", "games", "roms",
+                "dev_hdd0", "dev_flash", "GuiConfigs", "cache" 
+            };
+            foreach (var dirName in userDirs)
+            {
+                string src = Path.Combine(sourceBackup, dirName);
+                string dst = Path.Combine(destFolder, dirName);
+                if (Directory.Exists(src))
                 {
                     try
                     {
-                        Directory.Delete(stagingDir, true);
+                        if (Directory.Exists(dst))
+                        {
+                            if (string.Equals(dirName, "cache", StringComparison.OrdinalIgnoreCase))
+                            {
+                                try { Directory.Delete(dst, true); } catch { }
+                                Directory.Move(src, dst);
+                            }
+                            else
+                            {
+                                CopyDirectoryRecursively(src, dst);
+                            }
+                        }
+                        else
+                        {
+                            Directory.Move(src, dst);
+                        }
                     }
-                    catch (Exception cleanupEx)
+                    catch (Exception ex)
                     {
-                        RetroLogger.Log($"Staging cleanup failed for {stagingDir}: {cleanupEx.Message}", "WARNING");
+                        RetroLogger.Log($"Failed to restore user folder '{dirName}' from backup: {ex.Message}", "WARNING");
+                    }
+                }
+            }
+
+            string[] configFiles = { "config.yml", "portable.txt" };
+            foreach (var file in configFiles)
+            {
+                string srcFile = Path.Combine(sourceBackup, file);
+                string dstFile = Path.Combine(destFolder, file);
+                if (File.Exists(srcFile))
+                {
+                    try
+                    {
+                        File.Copy(srcFile, dstFile, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        RetroLogger.Log($"Failed to restore config file '{file}' from backup: {ex.Message}", "WARNING");
                     }
                 }
             }
         }
 
-        private static void CopyDirectoryPreservingUserFolders(string sourceDir, string destDir)
+        private static void CopyDirectoryRecursively(string sourceDir, string destDir)
         {
-            if (!Directory.Exists(destDir))
-            {
-                Directory.CreateDirectory(destDir);
-            }
+            if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
 
             foreach (string file in Directory.GetFiles(sourceDir))
             {
@@ -311,17 +720,18 @@ namespace RetroLauncher
 
             foreach (string subDir in Directory.GetDirectories(sourceDir))
             {
-                string dirName = Path.GetFileName(subDir).ToLower();
-                // Exclude sensitive user configurations or emulator dependencies to preserve state
-                if (dirName == "bios" || dirName == "saves" || dirName == "configs" || 
-                    dirName == "screenshots" || dirName == "games" || dirName == "roms")
-                {
-                    continue;
-                }
-
                 string destSubDir = Path.Combine(destDir, Path.GetFileName(subDir));
-                CopyDirectoryPreservingUserFolders(subDir, destSubDir);
+                CopyDirectoryRecursively(subDir, destSubDir);
             }
+        }
+
+        private static void CleanDirectory(string path)
+        {
+            try
+            {
+                if (Directory.Exists(path)) Directory.Delete(path, true);
+            }
+            catch { }
         }
     }
 }

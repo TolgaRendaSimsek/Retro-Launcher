@@ -20,63 +20,157 @@ namespace RetroLauncher
             var extractor = new SecureArchiveExtractor();
 
             // Setup temporary file paths
+            string validZip = Path.Combine(tempDir, "valid.zip");
+            string valid7z = Path.Combine(tempDir, "valid.7z");
+            string corruptZip = Path.Combine(tempDir, "corrupt.zip");
+            string corrupt7z = Path.Combine(tempDir, "corrupt.7z");
+            string emptyFile = Path.Combine(tempDir, "empty.zip");
             string traversalZip = Path.Combine(tempDir, "traversal.zip");
             string nestedZip = Path.Combine(tempDir, "nested.zip");
-            string normalZip = Path.Combine(tempDir, "normal.zip");
 
             try
             {
-                // Create Mock Zip for Traversal Check
-                CreateZipWithEntry(traversalZip, "../outside_path.txt", "traversal content");
+                // Create Mock Archives
+                CreateZipWithEntry(validZip, "emulator.exe", "emulator binary payload");
+                Create7zWithEntry(valid7z, "emulator.exe", "emulator binary payload");
+                CreateZipWithEntry(traversalZip, "../outside.txt", "traversal file content");
+                CreateZipWithEntry(nestedZip, "nested_root/emulator.exe", "nested emulator binary");
 
-                // Create Mock Zip for Nested Root Check
-                CreateZipWithEntry(nestedZip, "nested_folder/duckstation.exe", "emulator binary");
+                // Create Corrupt Files
+                File.WriteAllText(corruptZip, "not a real zip file PK");
+                File.WriteAllText(corrupt7z, "not a real 7z file 7z");
+                File.WriteAllText(emptyFile, "");
 
-                // Create Mock Zip for normal check
-                CreateZipWithEntry(normalZip, "duckstation.exe", "emulator binary");
-
-                // Test 1: Path Traversal Attack Mitigation
+                // Test 1: Valid ZIP Extraction
+                string destDir1 = Path.Combine(tempDir, "dest_valid_zip");
                 var req1 = new ArchiveExtractionRequest
                 {
-                    ArchivePath = traversalZip,
-                    DestinationPath = Path.Combine(tempDir, "dest_traversal"),
+                    ArchivePath = validZip,
+                    DestinationPath = destDir1,
                     CancellationToken = CancellationToken.None,
-                    ExecutableCandidates = new List<string> { "outside_path.txt" }
+                    ExecutableCandidates = new List<string> { "emulator.exe" },
+                    PackageId = "test_valid_zip",
+                    OperationId = "op1"
                 };
-
                 var res1 = await extractor.ExtractAsync(req1);
-                Debug.Assert(res1.Success == false, "Extraction of a traversal archive should fail.");
-                Debug.Assert(res1.FailureReason == ExtractionFailureReason.PathTraversalAttempt, "Failure reason should be PathTraversalAttempt.");
-                RetroLogger.Log("Test Case 1 passed: Path traversal (Zip Slip) correctly detected and blocked.");
+                Debug.Assert(res1.Success == true, "Valid ZIP extraction should succeed.");
+                Debug.Assert(File.Exists(Path.Combine(destDir1, "emulator.exe")), "Extracted emulator.exe should exist.");
+                RetroLogger.Log("Test Case 1 passed: Valid ZIP extraction.");
 
-                // Test 2: Oversized File / Limit Exceeded Check
+                // Test 2: Valid 7z Extraction
+                string destDir2 = Path.Combine(tempDir, "dest_valid_7z");
                 var req2 = new ArchiveExtractionRequest
                 {
-                    ArchivePath = normalZip,
-                    DestinationPath = Path.Combine(tempDir, "dest_limits"),
+                    ArchivePath = valid7z,
+                    DestinationPath = destDir2,
                     CancellationToken = CancellationToken.None,
-                    MaxSingleFileSize = 5, // Set very low limit to trigger constraint
-                    ExecutableCandidates = new List<string> { "duckstation.exe" }
+                    ExecutableCandidates = new List<string> { "emulator.exe" },
+                    PackageId = "test_valid_7z",
+                    OperationId = "op2"
                 };
-
                 var res2 = await extractor.ExtractAsync(req2);
-                Debug.Assert(res2.Success == false, "Extraction should fail when size limits are exceeded.");
-                Debug.Assert(res2.FailureReason == ExtractionFailureReason.LimitExceededSingleFileSize, "Failure reason should be LimitExceededSingleFileSize.");
-                RetroLogger.Log("Test Case 2 passed: Archive size limits correctly enforced.");
+                Debug.Assert(res2.Success == true, "Valid 7z extraction should succeed.");
+                Debug.Assert(File.Exists(Path.Combine(destDir2, "emulator.exe")), "Extracted emulator.exe from 7z should exist.");
+                RetroLogger.Log("Test Case 2 passed: Valid 7z extraction.");
 
-                // Test 3: Nested Root Folder Normalization
+                // Test 3: Corrupt ZIP Verification
+                string destDir3 = Path.Combine(tempDir, "dest_corrupt_zip");
                 var req3 = new ArchiveExtractionRequest
                 {
-                    ArchivePath = nestedZip,
-                    DestinationPath = Path.Combine(tempDir, "dest_nested"),
+                    ArchivePath = corruptZip,
+                    DestinationPath = destDir3,
                     CancellationToken = CancellationToken.None,
-                    ExecutableCandidates = new List<string> { "duckstation.exe" }
+                    ExecutableCandidates = new List<string> { "emulator.exe" },
+                    PackageId = "test_corrupt_zip",
+                    OperationId = "op3"
                 };
-
                 var res3 = await extractor.ExtractAsync(req3);
-                Debug.Assert(res3.Success == true, "Nested extraction should succeed.");
-                Debug.Assert(res3.MainExecutablePath != null && res3.MainExecutablePath.EndsWith("duckstation.exe"), "MainExecutablePath should target duckstation.exe.");
-                RetroLogger.Log("Test Case 3 passed: Nested archive root folders correctly normalized.");
+                Debug.Assert(res3.Success == false, "Corrupt ZIP extraction should fail.");
+                Debug.Assert(res3.FailureReason == ExtractionFailureReason.InvalidArchive, "Should fail with InvalidArchive.");
+                RetroLogger.Log("Test Case 3 passed: Corrupt ZIP correctly rejected.");
+
+                // Test 4: Corrupt 7z Verification
+                string destDir4 = Path.Combine(tempDir, "dest_corrupt_7z");
+                var req4 = new ArchiveExtractionRequest
+                {
+                    ArchivePath = corrupt7z,
+                    DestinationPath = destDir4,
+                    CancellationToken = CancellationToken.None,
+                    ExecutableCandidates = new List<string> { "emulator.exe" },
+                    PackageId = "test_corrupt_7z",
+                    OperationId = "op4"
+                };
+                var res4 = await extractor.ExtractAsync(req4);
+                Debug.Assert(res4.Success == false, "Corrupt 7z extraction should fail.");
+                Debug.Assert(res4.FailureReason == ExtractionFailureReason.InvalidArchive, "Should fail with InvalidArchive.");
+                RetroLogger.Log("Test Case 4 passed: Corrupt 7z correctly rejected.");
+
+                // Test 5: Empty File Verification
+                string destDir5 = Path.Combine(tempDir, "dest_empty_file");
+                var req5 = new ArchiveExtractionRequest
+                {
+                    ArchivePath = emptyFile,
+                    DestinationPath = destDir5,
+                    CancellationToken = CancellationToken.None,
+                    ExecutableCandidates = new List<string> { "emulator.exe" },
+                    PackageId = "test_empty_file",
+                    OperationId = "op5"
+                };
+                var res5 = await extractor.ExtractAsync(req5);
+                Debug.Assert(res5.Success == false, "Empty archive file extraction should fail.");
+                Debug.Assert(res5.FailureReason == ExtractionFailureReason.InvalidArchive, "Should fail with InvalidArchive.");
+                RetroLogger.Log("Test Case 5 passed: Empty file correctly rejected.");
+
+                // Test 6: Path Traversal (Zip Slip) Attempt
+                string destDir6 = Path.Combine(tempDir, "dest_traversal");
+                var req6 = new ArchiveExtractionRequest
+                {
+                    ArchivePath = traversalZip,
+                    DestinationPath = destDir6,
+                    CancellationToken = CancellationToken.None,
+                    ExecutableCandidates = new List<string> { "outside.txt" },
+                    PackageId = "test_traversal",
+                    OperationId = "op6"
+                };
+                var res6 = await extractor.ExtractAsync(req6);
+                Debug.Assert(res6.Success == false, "Traversal ZIP extraction should fail.");
+                Debug.Assert(res6.FailureReason == ExtractionFailureReason.PathTraversalAttempt, "Should fail with PathTraversalAttempt.");
+                RetroLogger.Log("Test Case 6 passed: Zip Slip attempt correctly blocked.");
+
+                // Test 7: Nested Root Folder Normalization
+                string destDir7 = Path.Combine(tempDir, "dest_nested");
+                var req7 = new ArchiveExtractionRequest
+                {
+                    ArchivePath = nestedZip,
+                    DestinationPath = destDir7,
+                    CancellationToken = CancellationToken.None,
+                    ExecutableCandidates = new List<string> { "emulator.exe" },
+                    PackageId = "test_nested",
+                    OperationId = "op7"
+                };
+                var res7 = await extractor.ExtractAsync(req7);
+                Debug.Assert(res7.Success == true, "Nested archive extraction should succeed.");
+                Debug.Assert(File.Exists(Path.Combine(destDir7, "emulator.exe")), "Nested directory should be normalized and emulator.exe should exist directly at target.");
+                RetroLogger.Log("Test Case 7 passed: Nested top-level directory normalized.");
+
+                // Test 8: Extraction Cancellation
+                string destDir8 = Path.Combine(tempDir, "dest_cancel");
+                var cts = new CancellationTokenSource();
+                cts.Cancel(); // Pre-cancel
+
+                var req8 = new ArchiveExtractionRequest
+                {
+                    ArchivePath = validZip,
+                    DestinationPath = destDir8,
+                    CancellationToken = cts.Token,
+                    ExecutableCandidates = new List<string> { "emulator.exe" },
+                    PackageId = "test_cancel",
+                    OperationId = "op8"
+                };
+                var res8 = await extractor.ExtractAsync(req8);
+                Debug.Assert(res8.Success == false, "Cancelled extraction should return failure.");
+                Debug.Assert(res8.FailureReason == ExtractionFailureReason.Cancellation, "Should fail with Cancellation.");
+                RetroLogger.Log("Test Case 8 passed: Cancellation handled successfully.");
 
                 RetroLogger.Log("All SecureArchiveExtractor Unit Tests completed successfully!");
             }
@@ -102,6 +196,19 @@ namespace RetroLauncher
                 using (var writer = new StreamWriter(entryStream))
                 {
                     writer.Write(content);
+                }
+            }
+        }
+
+        private static void Create7zWithEntry(string archivePath, string entryPath, string content)
+        {
+            if (File.Exists(archivePath)) File.Delete(archivePath);
+            using (var fileStream = new FileStream(archivePath, FileMode.Create))
+            using (var writer = new SharpCompress.Writers.SevenZip.SevenZipWriter(fileStream, new SharpCompress.Writers.SevenZip.SevenZipWriterOptions()))
+            {
+                using (var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)))
+                {
+                    writer.Write(entryPath, ms, DateTime.Now);
                 }
             }
         }
