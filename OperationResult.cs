@@ -19,6 +19,7 @@ namespace RetroLauncher
     {
         public string Message { get; set; } = "";
         public ErrorCategory Category { get; set; } = ErrorCategory.None;
+        public System.Net.HttpStatusCode? HttpStatusCode { get; set; }
         public Exception? Exception { get; set; }
     }
 
@@ -34,12 +35,12 @@ namespace RetroLauncher
             return new OperationResult<T> { Success = true, Data = data, IsValidatedFromCache = isFromCache };
         }
 
-        public static OperationResult<T> Fail(string message, ErrorCategory category, Exception? ex = null)
+        public static OperationResult<T> Fail(string message, ErrorCategory category, Exception? ex = null, System.Net.HttpStatusCode? statusCode = null)
         {
             return new OperationResult<T>
             {
                 Success = false,
-                Error = new OperationError { Message = message, Category = category, Exception = ex }
+                Error = new OperationError { Message = message, Category = category, Exception = ex, HttpStatusCode = statusCode }
             };
         }
     }

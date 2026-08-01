@@ -134,7 +134,7 @@ namespace RetroLauncher
                     if (clientResult.StatusCode == HttpStatusCode.NotFound) category = ErrorCategory.NotFound;
                     else if (isRateLimit) category = ErrorCategory.RateLimit;
 
-                    return OperationResult<ReleaseInfo>.Fail(clientResult.ErrorMessage ?? "Failed to fetch latest release.", category);
+                    return OperationResult<ReleaseInfo>.Fail(clientResult.ErrorMessage ?? "Failed to fetch latest release.", category, statusCode: clientResult.StatusCode);
                 }
                 catch (Exception ex)
                 {

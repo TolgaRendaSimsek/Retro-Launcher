@@ -20,8 +20,51 @@ namespace RetroLauncher
             TestMockedHttpFlowsAsync().GetAwaiter().GetResult();
             TestMockedGitLabAndCodebergFlowsAsync().GetAwaiter().GetResult();
             TestGraphQLProviderAsync().GetAwaiter().GetResult();
+            TestGitHubApiConnectionDiagnosticsAsync().GetAwaiter().GetResult();
 
             RetroLogger.Log("All GitHubReleaseProvider, Cache & Rate Coordinator Unit Tests completed successfully!");
+        }
+
+        private static async Task TestGitHubApiConnectionDiagnosticsAsync()
+        {
+            RetroLogger.Log("--- Starting Real GitHub API Connection Diagnostics ---");
+
+            var defProvider = new JsonEmulatorPackageDefinitionProvider();
+            var duckDef = defProvider.GetById("duckstation");
+            string duckOwner = duckDef?.GitHubOwner ?? "stenzek";
+            string duckRepo = duckDef?.GitHubRepository ?? "duckstation";
+
+            var reposToTest = new List<(string Owner, string Repo)>
+            {
+                ("PCSX2", "pcsx2"),
+                ("RPCS3", "rpcs3"),
+                (duckOwner, duckRepo)
+            };
+
+            var client = GitHubReleaseClient.Instance;
+
+            foreach (var (owner, repo) in reposToTest)
+            {
+                RetroLogger.Log($"Testing GitHub API connection for repository '{owner}/{repo}'...");
+                try
+                {
+                    var res = await client.GetLatestReleaseAsync(owner, repo, etag: null, CancellationToken.None);
+                    if (res.Success && res.Data != null)
+                    {
+                        RetroLogger.Log($"[GitHub API Diagnostic Success] '{owner}/{repo}' resolved latest tag: '{res.Data.TagName}', release name: '{res.Data.Name}', assets count: {res.Data.Assets.Count}");
+                    }
+                    else
+                    {
+                        RetroLogger.Log($"[GitHub API Diagnostic Result] '{owner}/{repo}' returned Success=false. Status: {res.StatusCode}. ErrorMessage: {res.ErrorMessage}", "WARNING");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    RetroLogger.Log($"[GitHub API Diagnostic Exception] Error querying '{owner}/{repo}': {ex.Message}", "ERROR");
+                }
+            }
+
+            RetroLogger.Log("--- Finished Real GitHub API Connection Diagnostics ---");
         }
 
         private static void TestUnsafeCacheKeys()

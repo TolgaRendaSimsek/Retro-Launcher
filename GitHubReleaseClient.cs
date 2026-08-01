@@ -38,7 +38,6 @@ namespace RetroLauncher
                 {
                     client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
                 }
-
                 string url = $"/repos/{owner}/{repository}/releases/latest";
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
 
@@ -46,6 +45,12 @@ namespace RetroLauncher
                 {
                     request.Headers.IfNoneMatch.Add(new System.Net.Http.Headers.EntityTagHeaderValue(etag));
                 }
+
+                string fullUrl = client.BaseAddress != null ? new Uri(client.BaseAddress, url).ToString() : url;
+
+                bool userAgentPresent = client.DefaultRequestHeaders.UserAgent.Any(u => u.Product != null && u.Product.Name == "RetroLauncher");
+                bool acceptPresent = client.DefaultRequestHeaders.Accept.Any(a => a.MediaType == "application/vnd.github+json");
+                bool isHttps = fullUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
                 using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
                 {
@@ -61,15 +66,28 @@ namespace RetroLauncher
                     var rateLimit = ParseRateLimitHeaders(response);
                     result.RateLimit = rateLimit;
 
+                    string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                    result.ResponseBody = body;
+
+                    // Format response headers
+                    string headersStr = string.Join("; ", response.Headers.Select(h => $"{h.Key}={string.Join(",", h.Value)}"));
+                    string bodySnippet = body.Length > 500 ? body.Substring(0, 500) + "..." : body;
+
+                    // Log connection diagnostic information before JSON parsing
+                    RetroLogger.Log($"[GitHub API Request] URL: {fullUrl} | HTTPS: {isHttps} | UserAgent: {userAgentPresent} | Accept: {acceptPresent}");
+                    RetroLogger.Log($"[GitHub API Response] Status: {(int)response.StatusCode} ({response.StatusCode})");
+                    RetroLogger.Log($"[GitHub API Response] Headers: {headersStr}");
+                    RetroLogger.Log($"[GitHub API Response] Body (first 500 chars): {bodySnippet}");
+
                     if (response.StatusCode == HttpStatusCode.OK)
                     {
-                        string body = await response.Content.ReadAsStringAsync(cancellationToken);
                         try
                         {
                             var release = JsonSerializer.Deserialize<GitHubRelease>(body);
                             if (release == null)
                             {
-                                result.ErrorMessage = "Failed to deserialize GitHub release (received empty body).";
+                                RetroLogger.Log($"[GitHub API Error] Deserialization returned null for '{fullUrl}'. Raw response body: {body}", "ERROR");
+                                result.ErrorMessage = "Failed to deserialize GitHub release (received null body).";
                                 return result;
                             }
 
@@ -79,6 +97,7 @@ namespace RetroLauncher
                         }
                         catch (JsonException ex)
                         {
+                            RetroLogger.Log($"[GitHub API Error] JSON parsing failed for '{fullUrl}': {ex.Message}. Raw response body: {body}", "ERROR");
                             result.ErrorMessage = $"Malformed JSON response from GitHub API: {ex.Message}";
                             return result;
                         }
@@ -88,22 +107,10 @@ namespace RetroLauncher
                         result.ErrorMessage = "Release not modified.";
                         return result;
                     }
-                    else if (response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == (HttpStatusCode)429)
-                    {
-                        string resetMsg = rateLimit != null 
-                            ? $". Rate limit will reset at {rateLimit.ResetTime.ToLocalTime()}."
-                            : "";
-                        result.ErrorMessage = $"GitHub API rate limit exceeded or access forbidden{resetMsg}";
-                        return result;
-                    }
-                    else if (response.StatusCode == HttpStatusCode.NotFound)
-                    {
-                        result.ErrorMessage = $"GitHub repository or latest release not found: '{owner}/{repository}'.";
-                        return result;
-                    }
                     else
                     {
-                        result.ErrorMessage = $"GitHub API returned error status: {response.StatusCode} ({(int)response.StatusCode})";
+                        RetroLogger.Log($"[GitHub API Error] Request to '{fullUrl}' failed with HTTP {(int)response.StatusCode} ({response.StatusCode}). Raw response body: {body}", "ERROR");
+                        result.ErrorMessage = $"HTTP {(int)response.StatusCode} ({response.StatusCode}): {body}";
                         return result;
                     }
                 }

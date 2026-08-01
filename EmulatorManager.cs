@@ -514,57 +514,50 @@ namespace RetroLauncher
 
         public static async Task<(string TagName, string DownloadUrl, long Size)?> GetLatestReleaseInfoAsync(string repo)
         {
-            using (var client = new HttpClient())
+            if (string.IsNullOrWhiteSpace(repo)) return null;
+            string[] parts = repo.Split('/');
+            if (parts.Length != 2) return null;
+
+            try
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("RetroLauncher");
-                string response = await client.GetStringAsync($"https://api.github.com/repos/{repo}/releases/latest");
-                using (var doc = JsonDocument.Parse(response))
+                var clientResult = await GitHubReleaseClient.Instance.GetLatestReleaseAsync(parts[0], parts[1], null, CancellationToken.None);
+                if (clientResult.Success && clientResult.Data != null)
                 {
-                    var root = doc.RootElement;
-                    string tagName = root.GetProperty("tag_name").GetString() ?? "";
-                    string downloadUrl = "";
-                    long size = 0;
-
-                    if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+                    var release = clientResult.Data;
+                    var definitionProvider = new JsonEmulatorPackageDefinitionProvider();
+                    var definition = definitionProvider.GetById(parts[1].ToLower()) ?? new EmulatorPackageDefinition
                     {
-                        foreach (var asset in assets.EnumerateArray())
-                        {
-                            string name = asset.GetProperty("name").GetString()?.ToLower() ?? "";
-                            if ((name.Contains("win") || name.Contains("x64") || name.Contains("x86_64") || name.Contains("windows")) &&
-                                (name.EndsWith(".zip") || name.EndsWith(".7z")))
-                            {
-                                downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
-                                if (asset.TryGetProperty("size", out var sizeProp))
-                                {
-                                    size = sizeProp.GetInt64();
-                                }
-                                break;
-                            }
-                        }
+                        Id = parts[1].ToLower(),
+                        DisplayName = parts[1],
+                        InstallDirectoryName = $"Emulators/{parts[1]}"
+                    };
 
-                        if (string.IsNullOrEmpty(downloadUrl) && assets.GetArrayLength() > 0)
+                    var releaseInfo = new ReleaseInfo
+                    {
+                        Tag = release.TagName,
+                        Name = release.Name
+                    };
+                    foreach (var a in release.Assets)
+                    {
+                        releaseInfo.Assets.Add(new ReleaseAssetInfo
                         {
-                            foreach (var asset in assets.EnumerateArray())
-                            {
-                                string name = asset.GetProperty("name").GetString()?.ToLower() ?? "";
-                                if (name.EndsWith(".zip") || name.EndsWith(".7z"))
-                                {
-                                    downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
-                                    if (asset.TryGetProperty("size", out var sizeProp))
-                                    {
-                                        size = sizeProp.GetInt64();
-                                    }
-                                    break;
-                                }
-                            }
-                        }
+                            Name = a.Name,
+                            DownloadUrl = a.BrowserDownloadUrl,
+                            Size = a.Size
+                        });
                     }
 
-                    if (!string.IsNullOrEmpty(tagName) && !string.IsNullOrEmpty(downloadUrl))
+                    var selector = new ReleaseAssetSelector();
+                    var selectResult = selector.SelectAsset(definition, releaseInfo);
+                    if (selectResult.Success && selectResult.SelectedAsset != null)
                     {
-                        return (tagName, downloadUrl, size);
+                        return (release.TagName, selectResult.SelectedAsset.DownloadUrl, selectResult.SelectedAsset.Size);
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to fetch release info for '{repo}': {ex.Message}");
             }
             return null;
         }

@@ -147,33 +147,37 @@ namespace RetroLauncher
             };
 
             string apiEndpoint = $"https://api.github.com/repos/{definition.GitHubOwner}/{definition.GitHubRepository}/releases";
+            OperationResult<ReleaseInfo> releaseRes;
             if (!string.IsNullOrEmpty(request.TargetReleaseTag))
             {
                 apiEndpoint += $"/tags/{request.TargetReleaseTag}";
                 EmulatorInstallDiagnosticsLogger.AddGitHubApiEndpoint(opId, apiEndpoint);
                 query.Tag = request.TargetReleaseTag;
-                var releaseRes = await _releaseProvider.GetReleaseByTagAsync(query, request.CancellationToken);
-                if (releaseRes.Success) selectedRelease = releaseRes.Data;
+                releaseRes = await _releaseProvider.GetReleaseByTagAsync(query, request.CancellationToken);
             }
             else
             {
                 apiEndpoint += "/latest";
                 EmulatorInstallDiagnosticsLogger.AddGitHubApiEndpoint(opId, apiEndpoint);
-                var latestRes = await _releaseProvider.GetLatestReleaseAsync(query, request.CancellationToken);
-                if (latestRes.Success) selectedRelease = latestRes.Data;
+                releaseRes = await _releaseProvider.GetLatestReleaseAsync(query, request.CancellationToken);
             }
 
-            if (selectedRelease == null)
+            if (!releaseRes.Success || releaseRes.Data == null)
             {
-                EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Error: Unable to retrieve release for '{definition.DisplayName}' from repository '{definition.GitHubOwner}/{definition.GitHubRepository}'.");
+                string errorMsg = releaseRes.Error?.Message ?? $"Unable to retrieve release for '{definition.DisplayName}' from repository '{definition.GitHubOwner}/{definition.GitHubRepository}'.";
+                EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Error: Release resolution failed for '{definition.DisplayName}': {errorMsg}");
                 return new PackageInstallResult
                 {
                     Success = false,
                     PackageId = definition.Id,
                     FailedStage = PackageInstallStage.ResolvingRelease,
-                    ErrorMessage = $"Unable to retrieve release tag for '{definition.DisplayName}' from repository '{definition.GitHubOwner}/{definition.GitHubRepository}'."
+                    ErrorMessage = errorMsg,
+                    HttpStatusCode = releaseRes.Error?.HttpStatusCode,
+                    Exception = releaseRes.Error?.Exception
                 };
             }
+
+            selectedRelease = releaseRes.Data;
 
             EmulatorInstallDiagnosticsLogger.SetReleaseTag(opId, selectedRelease.Tag);
 

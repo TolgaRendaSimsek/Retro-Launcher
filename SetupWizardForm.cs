@@ -177,6 +177,34 @@ namespace RetroLauncher
             _selectionRows = new List<EmulatorSelectionRow>();
             int yOffset = 95;
 
+            var definitions = _definitionProvider.GetAll();
+            bool addedNew = false;
+            foreach (var def in definitions)
+            {
+                if (!EmulatorManager.Instance.Config.Emulators.Any(e => string.Equals(e.Id, def.Id, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var item = new EmulatorItem
+                    {
+                        Id = def.Id,
+                        Name = def.DisplayName,
+                        SupportedPlatforms = new List<string> { def.ConsoleName },
+                        GithubRepository = $"{def.GitHubOwner}/{def.GitHubRepository}",
+                        ReleaseAssetPattern = def.IncludeAssetPatterns.FirstOrDefault() ?? "",
+                        ExecutablePath = Path.Combine(def.InstallDirectoryName, def.ExecutableCandidates.FirstOrDefault() ?? ""),
+                        InstallFolder = def.InstallDirectoryName,
+                        ArchiveType = def.SupportedArchiveTypes.FirstOrDefault() ?? "zip",
+                        Status = "Missing",
+                        RequiresBIOS = def.RequiresBios
+                    };
+                    EmulatorManager.Instance.Config.Emulators.Add(item);
+                    addedNew = true;
+                }
+            }
+            if (addedNew)
+            {
+                EmulatorManager.Instance.SaveEmulators();
+            }
+
             var emulators = EmulatorManager.Instance.Config.Emulators;
             foreach (var emu in emulators)
             {

@@ -91,10 +91,24 @@ namespace RetroLauncher
                     _definitions.AddRange(defaults);
                     SaveDefinitions(); // Attempt to seed the directory
                 }
-                else if (_needsSave)
+                else
                 {
-                    RetroLogger.Log("Saving migrated emulator definitions back to disk.");
-                    SaveDefinitions();
+                    // Ensure all default definitions (PCSX2, DuckStation, RPCS3) are registered
+                    var defaults = GetDefaultDefinitions();
+                    foreach (var def in defaults)
+                    {
+                        if (!_definitions.Any(x => string.Equals(x.Id, def.Id, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            _definitions.Add(def);
+                            _needsSave = true;
+                        }
+                    }
+
+                    if (_needsSave)
+                    {
+                        RetroLogger.Log("Saving updated emulator definitions back to disk.");
+                        SaveDefinitions();
+                    }
                 }
             }
             catch (Exception ex)

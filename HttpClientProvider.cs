@@ -33,7 +33,7 @@ namespace RetroLauncher
         {
             var handler = new HttpClientHandler
             {
-                AllowAutoRedirect = false
+                AllowAutoRedirect = true
             };
 
             var net = _settings.Network;
