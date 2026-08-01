@@ -57,8 +57,7 @@ namespace RetroLauncher
                 {
                     await _rateLimitCoordinator.WaitIfNeededAsync(cancellationToken);
 
-                    string? etag = cachedEntry?.ETag;
-                    var clientResult = await _gitHubReleaseClient.GetLatestReleaseAsync(query.Owner, query.Repository, etag, cancellationToken);
+                    var clientResult = await _gitHubReleaseClient.GetLatestReleaseAsync(query.Owner, query.Repository, etag: null, cancellationToken);
 
                     if (clientResult.RateLimit != null)
                     {
@@ -261,18 +260,6 @@ namespace RetroLauncher
 
                     var client = _clientProvider.GetClient("GitHubApi");
                     var request = new HttpRequestMessage(HttpMethod.Get, relativeUri);
-
-                    if (cachedEntry != null)
-                    {
-                        if (!string.IsNullOrEmpty(cachedEntry.ETag))
-                        {
-                            request.Headers.IfNoneMatch.ParseAdd(cachedEntry.ETag);
-                        }
-                        if (!string.IsNullOrEmpty(cachedEntry.LastModified))
-                        {
-                            request.Headers.IfModifiedSince = DateTimeOffset.Parse(cachedEntry.LastModified);
-                        }
-                    }
 
                     using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
                     {

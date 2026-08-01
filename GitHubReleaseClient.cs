@@ -41,11 +41,6 @@ namespace RetroLauncher
                 string url = $"/repos/{owner}/{repository}/releases/latest";
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-                if (!string.IsNullOrEmpty(etag))
-                {
-                    request.Headers.IfNoneMatch.Add(new System.Net.Http.Headers.EntityTagHeaderValue(etag));
-                }
-
                 string fullUrl = client.BaseAddress != null ? new Uri(client.BaseAddress, url).ToString() : url;
 
                 bool userAgentPresent = client.DefaultRequestHeaders.UserAgent.Any(u => u.Product != null && u.Product.Name == "RetroLauncher");

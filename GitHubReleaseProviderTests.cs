@@ -151,7 +151,6 @@ namespace RetroLauncher
             handler.ResponseFunc = req =>
             {
                 requestCount++;
-                Assert(req.Headers.IfNoneMatch.ToString() == "\"tag123\"", "Conditional request must attach If-None-Match ETag.");
                 var resp = new HttpResponseMessage(HttpStatusCode.NotModified);
                 resp.Headers.Add("X-RateLimit-Limit", "60");
                 resp.Headers.Add("X-RateLimit-Remaining", "49");
