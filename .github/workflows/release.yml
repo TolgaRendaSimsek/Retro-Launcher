@@ -1,0 +1,62 @@
+name: Build and Release Retro Launcher
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore Dependencies
+        run: dotnet restore
+
+      - name: Build Solution (Release)
+        run: dotnet build -c Release --no-restore
+
+      - name: Execute Unit Tests
+        run: dotnet test -c Release --no-build
+
+      - name: Publish Windows x64 Package
+        run: dotnet publish -c Release -r win-x64 --self-contained true -o publish/win-x64
+
+      - name: Verify Executable Existence
+        shell: powershell
+        run: |
+          if (-not (Test-Path "publish/win-x64/RetroLauncher.exe")) {
+            Write-Error "Published output is missing RetroLauncher.exe!"
+            exit 1
+          }
+
+      - name: Create Zip Package & SHA-256 Checksum
+        shell: powershell
+        run: |
+          $versionTag = "${{ github.ref_name }}"
+          $zipName = "RetroLauncher-win-x64-$versionTag.zip"
+          Compress-Archive -Path "publish/win-x64/*" -DestinationPath $zipName -Force
+          $hash = (Get-FileHash -Path $zipName -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "$zipName.sha256" -Value "$hash  $zipName"
+          Write-Host "Created package: $zipName with SHA256: $hash"
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            RetroLauncher-win-x64-${{ github.ref_name }}.zip
+            RetroLauncher-win-x64-${{ github.ref_name }}.zip.sha256
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -6,8 +6,13 @@ static class Program
     ///  The main entry point for the application.
     /// </summary>
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
+        if (RetroLauncher.Services.Updates.ApplicationUpdateInstaller.RunUpdaterCLIIfRequested(args))
+        {
+            return;
+        }
+
         ApplicationConfiguration.Initialize();
         ApplicationPaths.EnsureDirectoriesExist();
 #if DEBUG
@@ -22,6 +27,7 @@ static class Program
         EmulatorInstallationActionTests.RunTests();
         EmulatorManagerLayoutTests.RunTests();
         MainWindowLayoutTests.RunTests();
+        RetroLauncher.Tests.Unit.ApplicationUpdateServiceTests.RunTestsAsync().GetAwaiter().GetResult();
 #endif
         Application.Run(new MainForm());
     }    
