@@ -1226,7 +1226,7 @@ namespace RetroLauncher
 
         private void btnManageControllers_Click(object? sender, EventArgs e)
         {
-            using (var cForm = new ControllerManagerForm())
+            using (var cForm = new GlobalControllerSettingsForm())
             {
                 cForm.ShowDialog(this);
             }

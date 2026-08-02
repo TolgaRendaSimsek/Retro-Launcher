@@ -198,6 +198,19 @@ namespace RetroLauncher
                 }
             }
 
+            // Perform controller auto-sync if enabled globally or per emulator
+            if (emu != null && (emu.AutoSyncController || GlobalControllerConfigManager.Instance.Config.AutoSyncOnLaunch))
+            {
+                try
+                {
+                    ControllerSyncService.Instance.ApplyGlobalProfileToEmulatorAsync(emu.Id, skipRunningCheck: true).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    RetroLogger.Log($"Pre-launch auto controller sync warning for {emu.Name}: {ex.Message}", "WARNING");
+                }
+            }
+
             // 5. Apply per-game launch arguments & start process
             ProcessStartInfo psi = adapter.BuildLaunchCommand(game);
             

@@ -18,6 +18,11 @@ namespace RetroLauncher
         private Button btnOpenFolder = null!;
         private Button btnSyncBios = null!;
         private Button btnSyncAllBios = null!;
+        private Button btnApplyControllerProfile = null!;
+        private CheckBox chkAutoSyncController = null!;
+        private Button btnImportControllerSettings = null!;
+        private Button btnExportControllerSettings = null!;
+        private Button btnSyncAllControllers = null!;
         private Label lblChannel = null!;
         private ComboBox cbChannel = null!;
         private Label lblBiosHeader = null!;
@@ -215,9 +220,9 @@ namespace RetroLauncher
 
             btnSyncAllBios = new Button
             {
-                Text = "🔄 Sync All BIOS",
-                Location = new Point(125, 415),
-                Size = new Size(120, 35),
+                Text = "🔄 Sync BIOS",
+                Location = new Point(105, 415),
+                Size = new Size(105, 35),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(16, 185, 129),
@@ -227,11 +232,25 @@ namespace RetroLauncher
             btnSyncAllBios.Click += btnSyncAllBios_Click;
             this.Controls.Add(btnSyncAllBios);
 
+            btnSyncAllControllers = new Button
+            {
+                Text = "🎮 Sync Controllers",
+                Location = new Point(215, 415),
+                Size = new Size(130, 35),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(99, 102, 241),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            };
+            btnSyncAllControllers.FlatAppearance.BorderSize = 0;
+            btnSyncAllControllers.Click += btnSyncAllControllers_Click;
+            this.Controls.Add(btnSyncAllControllers);
+
             btnUninstall = new Button
             {
                 Text = "🗑️ Uninstall",
-                Location = new Point(250, 415),
-                Size = new Size(95, 35),
+                Location = new Point(350, 415),
+                Size = new Size(85, 35),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(239, 68, 68),
@@ -244,8 +263,8 @@ namespace RetroLauncher
             btnOpenFolder = new Button
             {
                 Text = "📂 Folder",
-                Location = new Point(350, 415),
-                Size = new Size(110, 35),
+                Location = new Point(440, 415),
+                Size = new Size(85, 35),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(107, 114, 128),
@@ -259,7 +278,7 @@ namespace RetroLauncher
             {
                 Text = "🔍 Health",
                 Location = new Point(20, 415),
-                Size = new Size(100, 35),
+                Size = new Size(80, 35),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(79, 70, 229),
@@ -269,8 +288,62 @@ namespace RetroLauncher
             btnHealthCheck.Click += btnHealthCheck_Click;
             this.Controls.Add(btnHealthCheck);
 
-            btnSaveClose.Location = new Point(465, 415);
-            btnSaveClose.Size = new Size(175, 35);
+            btnSaveClose.Location = new Point(530, 415);
+            btnSaveClose.Size = new Size(110, 35);
+
+            // Controller Profile Section Controls
+            btnApplyControllerProfile = new Button
+            {
+                Text = "🎮 Apply Controller Profile",
+                Location = new Point(260, 345),
+                Size = new Size(160, 28),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(99, 102, 241),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            };
+            btnApplyControllerProfile.FlatAppearance.BorderSize = 0;
+            btnApplyControllerProfile.Click += btnApplyControllerProfile_Click;
+            this.Controls.Add(btnApplyControllerProfile);
+
+            btnImportControllerSettings = new Button
+            {
+                Text = "📥 Import",
+                Location = new Point(425, 345),
+                Size = new Size(100, 28),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(55, 65, 81),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            };
+            btnImportControllerSettings.FlatAppearance.BorderSize = 0;
+            btnImportControllerSettings.Click += btnImportControllerSettings_Click;
+            this.Controls.Add(btnImportControllerSettings);
+
+            btnExportControllerSettings = new Button
+            {
+                Text = "📤 Export",
+                Location = new Point(530, 345),
+                Size = new Size(110, 28),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(55, 65, 81),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            };
+            btnExportControllerSettings.FlatAppearance.BorderSize = 0;
+            btnExportControllerSettings.Click += btnExportControllerSettings_Click;
+            this.Controls.Add(btnExportControllerSettings);
+
+            chkAutoSyncController = new CheckBox
+            {
+                Text = "Auto Sync Controller on Launch",
+                Location = new Point(260, 380),
+                Size = new Size(240, 22),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Regular),
+                ForeColor = Color.FromArgb(209, 213, 219)
+            };
+            chkAutoSyncController.CheckedChanged += chkAutoSyncController_CheckedChanged;
+            this.Controls.Add(chkAutoSyncController);
 
             // Hover styles
             SetupHover(btnSaveClose, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
@@ -284,6 +357,10 @@ namespace RetroLauncher
             SetupHover(btnHealthCheck, Color.FromArgb(79, 70, 229), Color.FromArgb(67, 56, 202));
             SetupHover(btnSyncBios, Color.FromArgb(79, 70, 229), Color.FromArgb(67, 56, 202));
             SetupHover(btnSyncAllBios, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
+            SetupHover(btnApplyControllerProfile, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
+            SetupHover(btnImportControllerSettings, Color.FromArgb(55, 65, 81), Color.FromArgb(31, 41, 55));
+            SetupHover(btnExportControllerSettings, Color.FromArgb(55, 65, 81), Color.FromArgb(31, 41, 55));
+            SetupHover(btnSyncAllControllers, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
         }
 
         private void SetupHover(Button btn, Color baseColor, Color hoverColor)
@@ -642,12 +719,15 @@ namespace RetroLauncher
             int channelIdx = cbChannel.Items.IndexOf(channel);
             cbChannel.SelectedIndex = channelIdx >= 0 ? channelIdx : 0;
 
+            chkAutoSyncController.Checked = emu.AutoSyncController;
+
             _isUpdatingSelection = false;
         }
 
         private void ClearDetails()
         {
             _isUpdatingSelection = true;
+            chkAutoSyncController.Checked = false;
             tbName.Clear();
             tbPath.Clear();
             lblVersion.Text = "Not Detected";
@@ -1485,6 +1565,84 @@ namespace RetroLauncher
             }
 
             MessageBox.Show(sb.ToString().TrimEnd(), "Global BIOS Sync Summary", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private async void btnApplyControllerProfile_Click(object? sender, EventArgs e)
+        {
+            if (lbEmulators.SelectedItem is not EmulatorItem selectedEmu) return;
+            btnApplyControllerProfile.Enabled = false;
+            try
+            {
+                var res = await ControllerSyncService.Instance.ApplyGlobalProfileToEmulatorAsync(selectedEmu.Id, false, this);
+                MessageBox.Show(this, res.Message, $"{selectedEmu.Name} Controller Sync", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                btnApplyControllerProfile.Enabled = true;
+            }
+        }
+
+        private void chkAutoSyncController_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_isUpdatingSelection) return;
+            if (lbEmulators.SelectedItem is EmulatorItem selectedEmu)
+            {
+                selectedEmu.AutoSyncController = chkAutoSyncController.Checked;
+                EmulatorManager.SaveConfig(_config);
+            }
+        }
+
+        private async void btnImportControllerSettings_Click(object? sender, EventArgs e)
+        {
+            if (lbEmulators.SelectedItem is not EmulatorItem selectedEmu) return;
+            btnImportControllerSettings.Enabled = false;
+            try
+            {
+                var res = await ControllerSyncService.Instance.ImportFromEmulatorAsync(selectedEmu.Id);
+                MessageBox.Show(this, res.Message, "Import Controller Settings", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                btnImportControllerSettings.Enabled = true;
+            }
+        }
+
+        private async void btnExportControllerSettings_Click(object? sender, EventArgs e)
+        {
+            if (lbEmulators.SelectedItem is not EmulatorItem selectedEmu) return;
+            btnExportControllerSettings.Enabled = false;
+            try
+            {
+                var res = await ControllerSyncService.Instance.ExportToEmulatorAsync(selectedEmu.Id, this);
+                MessageBox.Show(this, res.Message, "Export Controller Settings", MessageBoxButtons.OK, res.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                btnExportControllerSettings.Enabled = true;
+            }
+        }
+
+        private async void btnSyncAllControllers_Click(object? sender, EventArgs e)
+        {
+            btnSyncAllControllers.Enabled = false;
+            try
+            {
+                var syncResults = await ControllerSyncService.Instance.SyncAllEmulatorsAsync(this);
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("Global Controller Synchronization Summary:");
+                sb.AppendLine("------------------------------------------");
+                foreach (var res in syncResults)
+                {
+                    string status = res.Success ? "✅ Success" : "❌ Failed / Skipped";
+                    sb.AppendLine($"• {res.EmulatorName}: {status}");
+                    if (!string.IsNullOrEmpty(res.Message)) sb.AppendLine($"  - {res.Message}");
+                }
+                MessageBox.Show(this, sb.ToString().TrimEnd(), "Sync All Controllers", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            finally
+            {
+                btnSyncAllControllers.Enabled = true;
+            }
         }
     }
 }

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace RetroLauncher
@@ -27,7 +29,6 @@ namespace RetroLauncher
 
         public string GetExecutablePath()
         {
-            // First check if the emulatorId itself is already a path that exists
             if (File.Exists(EmulatorId)) return Path.GetFullPath(EmulatorId);
 
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
@@ -36,7 +37,6 @@ namespace RetroLauncher
                 return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, emu.ExecutablePath));
             }
 
-            // Also check if any emulator in config matches by name/id
             var emuByPath = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.ExecutablePath, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emuByPath != null)
             {
@@ -108,7 +108,61 @@ namespace RetroLauncher
 
         public string GetScreenshotFolder(Game game)
         {
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Saves", EmulatorId, "screenshots"));
+            string exePath = GetExecutablePath();
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", EmulatorId) : Path.GetDirectoryName(exePath) ?? "";
+            return Path.Combine(emuDir, "screenshots");
+        }
+
+        public GlobalControllerConfig ImportControllerConfiguration()
+        {
+            string cfgFile = GetGenericConfigFile();
+            var globalConfig = new GlobalControllerConfig();
+
+            if (File.Exists(cfgFile))
+            {
+                try
+                {
+                    string json = File.ReadAllText(cfgFile);
+                    globalConfig = JsonSerializer.Deserialize<GlobalControllerConfig>(json) ?? globalConfig;
+                }
+                catch { }
+            }
+
+            return globalConfig;
+        }
+
+        public bool ExportControllerConfiguration(GlobalControllerConfig globalConfig)
+        {
+            return ApplyGlobalControllerConfiguration(globalConfig);
+        }
+
+        public bool ApplyGlobalControllerConfiguration(GlobalControllerConfig globalConfig)
+        {
+            string cfgFile = GetGenericConfigFile();
+            string? dir = Path.GetDirectoryName(cfgFile);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            try
+            {
+                string json = JsonSerializer.Serialize(globalConfig, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(cfgFile, json);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                RetroLogger.Log($"Generic emulator controller update failed: {ex.Message}", "ERROR");
+                return false;
+            }
+        }
+
+        private string GetGenericConfigFile()
+        {
+            string exePath = GetExecutablePath();
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", EmulatorId) : Path.GetDirectoryName(exePath) ?? "";
+            return Path.Combine(emuDir, "controller_profile.json");
         }
     }
 }

@@ -30,6 +30,7 @@ namespace RetroLauncher
         public string ReleaseChannel { get; set; } = "Stable";
         public string SelectedAssetName { get; set; } = "";
         public DateTime? InstallationTimestamp { get; set; }
+        public bool AutoSyncController { get; set; } = false;
 
         // Backward compatibility properties
         public string Path { get => ExecutablePath; set => ExecutablePath = value; }

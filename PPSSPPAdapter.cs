@@ -7,9 +7,9 @@ using System.Threading.Tasks;
 
 namespace RetroLauncher
 {
-    public class RPCS3Adapter : IEmulatorAdapter
+    public class PPSSPPAdapter : IEmulatorAdapter
     {
-        public string EmulatorId => "rpcs3";
+        public string EmulatorId => "ppsspp";
 
         public bool IsInstalled()
         {
@@ -18,7 +18,7 @@ namespace RetroLauncher
 
         public bool CanRun(Game game)
         {
-            return string.Equals(game.Platform, "Sony PlayStation 3", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(game.Platform, "Sony PlayStation Portable", StringComparison.OrdinalIgnoreCase);
         }
 
         public string GetExecutablePath()
@@ -40,7 +40,7 @@ namespace RetroLauncher
                 UseShellExecute = false
             };
 
-            string defaultArgs = emu?.DefaultLaunchArguments ?? "--no-gui";
+            string defaultArgs = emu?.DefaultLaunchArguments ?? "";
             var parts = defaultArgs.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var part in parts)
             {
@@ -48,7 +48,6 @@ namespace RetroLauncher
             }
 
             psi.ArgumentList.Add(romPath);
-
             return psi;
         }
 
@@ -56,17 +55,14 @@ namespace RetroLauncher
         {
             if (!ValidateGame(game))
             {
-                throw new FileNotFoundException("RPCS3 executable or EBOOT.BIN / PS3 game directory is missing.");
+                throw new FileNotFoundException("PPSSPP executable or PSP ROM is missing.");
             }
 
             return await Task.Run(() =>
             {
                 ProcessStartInfo psi = BuildLaunchCommand(game);
                 Process? process = Process.Start(psi);
-                if (process == null)
-                {
-                    throw new Exception("Failed to start RPCS3 process.");
-                }
+                if (process == null) throw new Exception("Failed to start PPSSPP process.");
                 return process;
             });
         }
@@ -77,20 +73,7 @@ namespace RetroLauncher
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
 
             string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
-            if (string.IsNullOrEmpty(game.RomPath)) return false;
-
-            if (File.Exists(romPath)) return true;
-
-            if (Directory.Exists(romPath))
-            {
-                string ebootFile = Path.Combine(romPath, "PS3_GAME", "USRDIR", "EBOOT.BIN");
-                if (File.Exists(ebootFile)) return true;
-
-                string directEboot = Path.Combine(romPath, "EBOOT.BIN");
-                if (File.Exists(directEboot)) return true;
-            }
-
-            return false;
+            return File.Exists(romPath) || Directory.Exists(romPath);
         }
 
         public string GetSaveFolder(Game game)
@@ -100,32 +83,31 @@ namespace RetroLauncher
 
         public string GetScreenshotFolder(Game game)
         {
-            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Emulators", "RPCS3", "captures"));
+            string exePath = GetExecutablePath();
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "PPSSPP") : Path.GetDirectoryName(exePath) ?? "";
+            return Path.Combine(emuDir, "memstick", "PSP", "SCREENSHOT");
         }
 
         public GlobalControllerConfig ImportControllerConfiguration()
         {
-            string yamlPath = GetInputConfigPath();
+            string iniPath = GetControlsIniPath();
             var globalConfig = new GlobalControllerConfig();
 
-            if (!File.Exists(yamlPath)) return globalConfig;
+            if (!File.Exists(iniPath)) return globalConfig;
 
             try
             {
-                string[] lines = File.ReadAllLines(yamlPath);
-                for (int i = 1; i <= 4; i++)
+                var ini = IniFileParser.ParseFile(iniPath);
+                if (ini.ContainsKey("Control"))
                 {
-                    string playerHeader = $"Player {i} Pad:";
-                    if (lines.Any(l => l.Contains(playerHeader)))
-                    {
-                        var player = globalConfig.Players.FirstOrDefault(p => p.PlayerIndex == i) ?? new PlayerControllerConfig { PlayerIndex = i };
-                        player.ControllerType = "XInput";
-                    }
+                    var sec = ini["Control"];
+                    var player = globalConfig.Players.FirstOrDefault(p => p.PlayerIndex == 1) ?? new PlayerControllerConfig { PlayerIndex = 1 };
+                    if (sec.TryGetValue("AnalogDeadzone", out string? dzVal) && float.TryParse(dzVal, out float dz)) player.Deadzone = dz;
                 }
             }
             catch (Exception ex)
             {
-                RetroLogger.Log($"RPCS3 controller import warning: {ex.Message}", "WARNING");
+                RetroLogger.Log($"PPSSPP controller import warning: {ex.Message}", "WARNING");
             }
 
             return globalConfig;
@@ -138,8 +120,8 @@ namespace RetroLauncher
 
         public bool ApplyGlobalControllerConfiguration(GlobalControllerConfig globalConfig)
         {
-            string configPath = GetInputConfigPath();
-            string? dir = Path.GetDirectoryName(configPath);
+            string iniPath = GetControlsIniPath();
+            string? dir = Path.GetDirectoryName(iniPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
@@ -147,36 +129,30 @@ namespace RetroLauncher
 
             try
             {
-                // RPCS3 YAML pad configuration creation / update
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine("# RPCS3 Input Configuration - Generated by Retro Launcher");
-                for (int i = 1; i <= 4; i++)
-                {
-                    var player = globalConfig.Players.FirstOrDefault(p => p.PlayerIndex == i) ?? new PlayerControllerConfig { PlayerIndex = i };
-                    sb.AppendLine($"Player {i} Pad:");
-                    sb.AppendLine($"  Handler: {player.ControllerType}");
-                    sb.AppendLine($"  Device: {player.DeviceGuidOrName}");
-                    sb.AppendLine($"  Left Stick Deadzone: {player.Deadzone:F2}");
-                    sb.AppendLine($"  Right Stick Deadzone: {player.Deadzone:F2}");
-                    sb.AppendLine($"  Trigger Threshold: {player.TriggerThreshold:F2}");
-                    sb.AppendLine($"  Vibration: {player.EnableRumble}");
-                }
+                var ini = File.Exists(iniPath) ? IniFileParser.ParseFile(iniPath) : new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
 
-                File.WriteAllText(configPath, sb.ToString());
+                if (!ini.ContainsKey("Control")) ini["Control"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var sec = ini["Control"];
+
+                var p1 = globalConfig.Players.FirstOrDefault(p => p.PlayerIndex == 1) ?? new PlayerControllerConfig { PlayerIndex = 1 };
+                sec["AnalogDeadzone"] = p1.Deadzone.ToString("F2");
+                sec["AnalogSensitivity"] = p1.Sensitivity.ToString("F2");
+
+                IniFileParser.WriteFile(iniPath, ini);
                 return true;
             }
             catch (Exception ex)
             {
-                RetroLogger.Log($"RPCS3 controller config update failed: {ex.Message}", "ERROR");
+                RetroLogger.Log($"PPSSPP controller config update failed: {ex.Message}", "ERROR");
                 return false;
             }
         }
 
-        private string GetInputConfigPath()
+        private string GetControlsIniPath()
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "RPCS3") : Path.GetDirectoryName(exePath) ?? "";
-            return Path.Combine(emuDir, "config_input.yml");
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "PPSSPP") : Path.GetDirectoryName(exePath) ?? "";
+            return Path.Combine(emuDir, "memstick", "PSP", "SYSTEM", "controls.ini");
         }
     }
 }

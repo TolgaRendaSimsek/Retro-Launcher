@@ -10,8 +10,12 @@ namespace RetroLauncher
         {
             new DuckStationAdapter(),
             new PCSX2Adapter(),
-            new RPCS3Adapter()
+            new RPCS3Adapter(),
+            new DolphinAdapter(),
+            new PPSSPPAdapter()
         };
+
+        public static IReadOnlyList<IEmulatorAdapter> GetAllAdapters() => _adapters.AsReadOnly();
 
         public static IEmulatorAdapter GetAdapter(Game game)
         {

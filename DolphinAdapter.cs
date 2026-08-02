@@ -3,14 +3,13 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace RetroLauncher
 {
-    public class PCSX2Adapter : IEmulatorAdapter
+    public class DolphinAdapter : IEmulatorAdapter
     {
-        public string EmulatorId => "pcsx2";
+        public string EmulatorId => "dolphin";
 
         public bool IsInstalled()
         {
@@ -19,34 +18,30 @@ namespace RetroLauncher
 
         public bool CanRun(Game game)
         {
-            return string.Equals(game.Platform, "Sony PlayStation 2", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(game.Platform, "Nintendo GameCube", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(game.Platform, "Nintendo Wii", StringComparison.OrdinalIgnoreCase);
         }
 
         public string GetExecutablePath()
         {
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emu == null || string.IsNullOrEmpty(emu.ExecutablePath)) return "";
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, emu.ExecutablePath));
+            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.ExecutablePath));
         }
 
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
             string exePath = GetExecutablePath();
-            string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
+            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
-            
+
             var psi = new ProcessStartInfo
             {
                 FileName = exePath,
                 UseShellExecute = false
             };
 
-            string defaultArgs = emu?.DefaultLaunchArguments ?? "-fullscreen";
-            if (!defaultArgs.Contains("-nogui"))
-            {
-                defaultArgs += " -nogui";
-            }
-
+            string defaultArgs = emu?.DefaultLaunchArguments ?? "-e";
             var parts = defaultArgs.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var part in parts)
             {
@@ -54,7 +49,6 @@ namespace RetroLauncher
             }
 
             psi.ArgumentList.Add(romPath);
-
             return psi;
         }
 
@@ -62,17 +56,14 @@ namespace RetroLauncher
         {
             if (!ValidateGame(game))
             {
-                throw new FileNotFoundException("Emulator executable or ROM path is missing.");
+                throw new FileNotFoundException("Dolphin executable or game ROM is missing.");
             }
 
             return await Task.Run(() =>
             {
                 ProcessStartInfo psi = BuildLaunchCommand(game);
                 Process? process = Process.Start(psi);
-                if (process == null)
-                {
-                    throw new Exception("Failed to start PCSX2 process.");
-                }
+                if (process == null) throw new Exception("Failed to start Dolphin process.");
                 return process;
             });
         }
@@ -82,10 +73,8 @@ namespace RetroLauncher
             string exePath = GetExecutablePath();
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
 
-            string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
-            if (string.IsNullOrEmpty(game.RomPath) || (!File.Exists(romPath) && !Directory.Exists(romPath))) return false;
-
-            return true;
+            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
+            return File.Exists(romPath) || Directory.Exists(romPath);
         }
 
         public string GetSaveFolder(Game game)
@@ -95,12 +84,14 @@ namespace RetroLauncher
 
         public string GetScreenshotFolder(Game game)
         {
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", "PS2", "snaps"));
+            string exePath = GetExecutablePath();
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "Dolphin") : Path.GetDirectoryName(exePath) ?? "";
+            return Path.Combine(emuDir, "User", "ScreenShots");
         }
 
         public GlobalControllerConfig ImportControllerConfiguration()
         {
-            string iniPath = GetIniPath();
+            string iniPath = GetGCPadIniPath();
             var globalConfig = new GlobalControllerConfig();
 
             if (!File.Exists(iniPath)) return globalConfig;
@@ -110,22 +101,18 @@ namespace RetroLauncher
                 var ini = IniFileParser.ParseFile(iniPath);
                 for (int i = 1; i <= 4; i++)
                 {
-                    string sectionName = $"Pad{i}";
+                    string sectionName = $"GCPad{i}";
                     if (ini.ContainsKey(sectionName))
                     {
                         var sec = ini[sectionName];
                         var player = globalConfig.Players.FirstOrDefault(p => p.PlayerIndex == i) ?? new PlayerControllerConfig { PlayerIndex = i };
-                        
-                        if (sec.TryGetValue("Type", out string? typeVal)) player.ControllerType = typeVal;
-                        if (sec.TryGetValue("Deadzone", out string? dzVal) && float.TryParse(dzVal, out float dz)) player.Deadzone = dz;
-                        if (sec.TryGetValue("Sensitivity", out string? sensVal) && float.TryParse(sensVal, out float sens)) player.Sensitivity = sens;
-                        if (sec.TryGetValue("Rumble", out string? rumbVal) && bool.TryParse(rumbVal, out bool rumb)) player.EnableRumble = rumb;
+                        if (sec.TryGetValue("Device", out string? devVal)) player.DeviceGuidOrName = devVal;
                     }
                 }
             }
             catch (Exception ex)
             {
-                RetroLogger.Log($"PCSX2 controller import warning: {ex.Message}", "WARNING");
+                RetroLogger.Log($"Dolphin controller import warning: {ex.Message}", "WARNING");
             }
 
             return globalConfig;
@@ -138,7 +125,7 @@ namespace RetroLauncher
 
         public bool ApplyGlobalControllerConfiguration(GlobalControllerConfig globalConfig)
         {
-            string iniPath = GetIniPath();
+            string iniPath = GetGCPadIniPath();
             string? dir = Path.GetDirectoryName(iniPath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
@@ -151,22 +138,15 @@ namespace RetroLauncher
 
                 for (int i = 1; i <= 4; i++)
                 {
-                    string sectionName = $"Pad{i}";
+                    string sectionName = $"GCPad{i}";
                     if (!ini.ContainsKey(sectionName)) ini[sectionName] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    
+
                     var sec = ini[sectionName];
                     var player = globalConfig.Players.FirstOrDefault(p => p.PlayerIndex == i) ?? new PlayerControllerConfig { PlayerIndex = i };
 
-                    sec["Type"] = player.ControllerType;
-                    sec["Deadzone"] = player.Deadzone.ToString("F2");
-                    sec["Sensitivity"] = player.Sensitivity.ToString("F2");
-                    sec["TriggerThreshold"] = player.TriggerThreshold.ToString("F2");
-                    sec["InvertLeftStickX"] = player.InvertLeftStickX.ToString();
-                    sec["InvertLeftStickY"] = player.InvertLeftStickY.ToString();
-                    sec["InvertRightStickX"] = player.InvertRightStickX.ToString();
-                    sec["InvertRightStickY"] = player.InvertRightStickY.ToString();
-                    sec["EnableRumble"] = player.EnableRumble.ToString();
-                    sec["RumbleStrength"] = player.RumbleStrength.ToString("F2");
+                    sec["Device"] = string.IsNullOrEmpty(player.DeviceGuidOrName) ? "DInput/0/Keyboard Mouse" : player.DeviceGuidOrName;
+                    sec["Main Stick/Dead Zone"] = (player.Deadzone * 100).ToString("F1");
+                    sec["C-Stick/Dead Zone"] = (player.Deadzone * 100).ToString("F1");
 
                     foreach (var kvp in player.ButtonMappings)
                     {
@@ -174,40 +154,21 @@ namespace RetroLauncher
                     }
                 }
 
-                // Apply Hotkeys section
-                string hotkeySecName = "Hotkeys";
-                if (!ini.ContainsKey(hotkeySecName)) ini[hotkeySecName] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                var hotkeySec = ini[hotkeySecName];
-                hotkeySec["Pause"] = globalConfig.Hotkeys.Pause;
-                hotkeySec["SaveState"] = globalConfig.Hotkeys.SaveState;
-                hotkeySec["LoadState"] = globalConfig.Hotkeys.LoadState;
-                hotkeySec["FastForward"] = globalConfig.Hotkeys.FastForward;
-                hotkeySec["Screenshot"] = globalConfig.Hotkeys.Screenshot;
-                hotkeySec["ToggleMenu"] = globalConfig.Hotkeys.ToggleMenu;
-
                 IniFileParser.WriteFile(iniPath, ini);
                 return true;
             }
             catch (Exception ex)
             {
-                RetroLogger.Log($"PCSX2 controller configuration update failed: {ex.Message}", "ERROR");
+                RetroLogger.Log($"Dolphin controller config update failed: {ex.Message}", "ERROR");
                 return false;
             }
         }
 
-        private string GetIniPath()
+        private string GetGCPadIniPath()
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "PCSX2") : Path.GetDirectoryName(exePath) ?? "";
-            
-            string portableIni = Path.Combine(emuDir, "inis", "PCSX2.ini");
-            if (File.Exists(portableIni) || Directory.Exists(Path.Combine(emuDir, "inis")))
-            {
-                return portableIni;
-            }
-
-            string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PCSX2", "inis");
-            return Path.Combine(appDataDir, "PCSX2.ini");
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "Dolphin") : Path.GetDirectoryName(exePath) ?? "";
+            return Path.Combine(emuDir, "User", "Config", "GCPadNew.ini");
         }
     }
 }

@@ -14,5 +14,10 @@ namespace RetroLauncher
         bool ValidateGame(Game game);
         string GetSaveFolder(Game game);
         string GetScreenshotFolder(Game game);
+
+        // Controller Synchronization Methods
+        GlobalControllerConfig ImportControllerConfiguration();
+        bool ExportControllerConfiguration(GlobalControllerConfig globalConfig);
+        bool ApplyGlobalControllerConfiguration(GlobalControllerConfig globalConfig);
     }
 }
