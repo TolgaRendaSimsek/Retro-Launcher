@@ -152,7 +152,7 @@ namespace RetroLauncher
                     // Synchronize the BIOS to the emulator's expected directory before launching
                     if (biosItem != null)
                     {
-                        BiosManager.Instance.SyncBiosToEmulator(biosItem);
+                        BiosSynchronizationService.Instance.SyncEmulatorBiosAsync(emu.Id).GetAwaiter().GetResult();
                     }
                 }
                 else if (emu.RequiresFirmware)
@@ -193,7 +193,7 @@ namespace RetroLauncher
 
                     if (fwItem != null)
                     {
-                        BiosManager.Instance.SyncBiosToEmulator(fwItem);
+                        BiosSynchronizationService.Instance.SyncEmulatorBiosAsync(emu.Id).GetAwaiter().GetResult();
                     }
                 }
             }

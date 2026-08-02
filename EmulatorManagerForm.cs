@@ -16,6 +16,8 @@ namespace RetroLauncher
         private Button btnCancel = null!;
         private Button btnUninstall = null!;
         private Button btnOpenFolder = null!;
+        private Button btnSyncBios = null!;
+        private Button btnSyncAllBios = null!;
         private Label lblChannel = null!;
         private ComboBox cbChannel = null!;
         private Label lblBiosHeader = null!;
@@ -119,6 +121,20 @@ namespace RetroLauncher
             };
             this.Controls.Add(lblBiosStatusVal);
 
+            btnSyncBios = new Button
+            {
+                Text = "🔄 Sync BIOS",
+                Location = new Point(520, 132),
+                Size = new Size(120, 28),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(79, 70, 229),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            };
+            btnSyncBios.FlatAppearance.BorderSize = 0;
+            btnSyncBios.Click += btnSyncBios_Click;
+            this.Controls.Add(btnSyncBios);
+
             lblDefaultHeader.Location = new Point(260, 173);
             lblDefaultHeader.Text = "Default For:";
             lblDefaultHeader.Width = 100;
@@ -197,11 +213,25 @@ namespace RetroLauncher
             btnCancel.Click += btnCancel_Click;
             this.Controls.Add(btnCancel);
 
+            btnSyncAllBios = new Button
+            {
+                Text = "🔄 Sync All BIOS",
+                Location = new Point(125, 415),
+                Size = new Size(120, 35),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(16, 185, 129),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            };
+            btnSyncAllBios.FlatAppearance.BorderSize = 0;
+            btnSyncAllBios.Click += btnSyncAllBios_Click;
+            this.Controls.Add(btnSyncAllBios);
+
             btnUninstall = new Button
             {
                 Text = "🗑️ Uninstall",
-                Location = new Point(260, 415),
-                Size = new Size(120, 35),
+                Location = new Point(250, 415),
+                Size = new Size(95, 35),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(239, 68, 68),
@@ -213,9 +243,9 @@ namespace RetroLauncher
 
             btnOpenFolder = new Button
             {
-                Text = "📂 Open Folder",
-                Location = new Point(390, 415),
-                Size = new Size(120, 35),
+                Text = "📂 Folder",
+                Location = new Point(350, 415),
+                Size = new Size(110, 35),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(107, 114, 128),
@@ -227,9 +257,9 @@ namespace RetroLauncher
 
             Button btnHealthCheck = new Button
             {
-                Text = "🔍 Health Check",
+                Text = "🔍 Health",
                 Location = new Point(20, 415),
-                Size = new Size(220, 35),
+                Size = new Size(100, 35),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(79, 70, 229),
@@ -239,8 +269,8 @@ namespace RetroLauncher
             btnHealthCheck.Click += btnHealthCheck_Click;
             this.Controls.Add(btnHealthCheck);
 
-            btnSaveClose.Location = new Point(520, 415);
-            btnSaveClose.Size = new Size(120, 35);
+            btnSaveClose.Location = new Point(465, 415);
+            btnSaveClose.Size = new Size(175, 35);
 
             // Hover styles
             SetupHover(btnSaveClose, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
@@ -252,6 +282,8 @@ namespace RetroLauncher
             SetupHover(btnUninstall, Color.FromArgb(239, 68, 68), Color.FromArgb(220, 38, 38));
             SetupHover(btnOpenFolder, Color.FromArgb(107, 114, 128), Color.FromArgb(75, 85, 99));
             SetupHover(btnHealthCheck, Color.FromArgb(79, 70, 229), Color.FromArgb(67, 56, 202));
+            SetupHover(btnSyncBios, Color.FromArgb(79, 70, 229), Color.FromArgb(67, 56, 202));
+            SetupHover(btnSyncAllBios, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
         }
 
         private void SetupHover(Button btn, Color baseColor, Color hoverColor)
@@ -1250,6 +1282,209 @@ namespace RetroLauncher
                 UpdateDetectedStatus(selectedEmu);
             }
             RefreshList();
+        }
+
+        private async void btnSyncBios_Click(object? sender, EventArgs e)
+        {
+            if (lbEmulators.SelectedItem is not EmulatorItem selectedEmu) return;
+
+            btnSyncBios.Enabled = false;
+            btnSyncAllBios.Enabled = false;
+            lblBiosStatusVal.Text = "Scanning BIOS files...";
+            lblBiosStatusVal.ForeColor = Color.FromArgb(245, 158, 11);
+
+            var progress = new Progress<BiosSyncProgress>(p =>
+            {
+                switch (p.State)
+                {
+                    case BiosSyncState.Scanning:
+                        lblBiosStatusVal.Text = "Scanning BIOS files...";
+                        lblBiosStatusVal.ForeColor = Color.FromArgb(245, 158, 11);
+                        break;
+                    case BiosSyncState.Syncing:
+                        lblBiosStatusVal.Text = "Syncing...";
+                        lblBiosStatusVal.ForeColor = Color.FromArgb(59, 130, 246);
+                        break;
+                    case BiosSyncState.SyncedSuccessfully:
+                        lblBiosStatusVal.Text = "Synced successfully";
+                        lblBiosStatusVal.ForeColor = Color.FromArgb(16, 185, 129);
+                        break;
+                    case BiosSyncState.NoCompatibleBiosFound:
+                        lblBiosStatusVal.Text = "No compatible BIOS found";
+                        lblBiosStatusVal.ForeColor = Color.FromArgb(245, 158, 11);
+                        break;
+                    case BiosSyncState.EmulatorNotInstalled:
+                        lblBiosStatusVal.Text = "Emulator not installed";
+                        lblBiosStatusVal.ForeColor = Color.FromArgb(239, 68, 68);
+                        break;
+                    case BiosSyncState.Failed:
+                        lblBiosStatusVal.Text = "Sync failed";
+                        lblBiosStatusVal.ForeColor = Color.FromArgb(239, 68, 68);
+                        break;
+                }
+            });
+
+            _cts = new CancellationTokenSource();
+
+            try
+            {
+                var result = await BiosSynchronizationService.Instance.SyncEmulatorBiosAsync(selectedEmu.Id, progress, _cts.Token);
+                UpdateBiosStatusUI(result);
+                ShowSingleSyncSummaryDialog(result);
+            }
+            catch (OperationCanceledException)
+            {
+                lblBiosStatusVal.Text = "Sync cancelled";
+                lblBiosStatusVal.ForeColor = Color.FromArgb(239, 68, 68);
+            }
+            catch (Exception ex)
+            {
+                lblBiosStatusVal.Text = "Sync failed";
+                lblBiosStatusVal.ForeColor = Color.FromArgb(239, 68, 68);
+                ShowDetailedError("BIOS Synchronization Error", $"Failed to synchronize BIOS for '{selectedEmu.Name}'.", ex);
+            }
+            finally
+            {
+                btnSyncBios.Enabled = true;
+                btnSyncAllBios.Enabled = true;
+                _cts?.Dispose();
+                _cts = null;
+            }
+        }
+
+        private async void btnSyncAllBios_Click(object? sender, EventArgs e)
+        {
+            btnSyncBios.Enabled = false;
+            btnSyncAllBios.Enabled = false;
+            
+            _cts = new CancellationTokenSource();
+
+            var progress = new Progress<BiosSyncProgress>(p =>
+            {
+                lblBiosStatusVal.Text = $"Syncing {p.EmulatorName}...";
+            });
+
+            try
+            {
+                var results = await BiosSynchronizationService.Instance.SyncAllEmulatorsBiosAsync(progress, _cts.Token);
+                ShowGlobalSyncSummaryDialog(results);
+                if (lbEmulators.SelectedItem is EmulatorItem current)
+                {
+                    var matched = results.FirstOrDefault(r => string.Equals(r.EmulatorId, current.Id, StringComparison.OrdinalIgnoreCase));
+                    if (matched != null)
+                    {
+                        UpdateBiosStatusUI(matched);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                lblBiosStatusVal.Text = "Global sync cancelled";
+            }
+            catch (Exception ex)
+            {
+                ShowDetailedError("Global BIOS Synchronization Error", "Failed to complete global BIOS sync operation.", ex);
+            }
+            finally
+            {
+                btnSyncBios.Enabled = true;
+                btnSyncAllBios.Enabled = true;
+                _cts?.Dispose();
+                _cts = null;
+            }
+        }
+
+        private void UpdateBiosStatusUI(BiosSyncResult result)
+        {
+            switch (result.State)
+            {
+                case BiosSyncState.SyncedSuccessfully:
+                    lblBiosStatusVal.Text = "Synced successfully";
+                    lblBiosStatusVal.ForeColor = Color.FromArgb(16, 185, 129);
+                    break;
+                case BiosSyncState.NoCompatibleBiosFound:
+                    lblBiosStatusVal.Text = "No compatible BIOS found";
+                    lblBiosStatusVal.ForeColor = Color.FromArgb(245, 158, 11);
+                    break;
+                case BiosSyncState.EmulatorNotInstalled:
+                    lblBiosStatusVal.Text = "Emulator not installed";
+                    lblBiosStatusVal.ForeColor = Color.FromArgb(239, 68, 68);
+                    break;
+                case BiosSyncState.Failed:
+                    lblBiosStatusVal.Text = "Sync failed";
+                    lblBiosStatusVal.ForeColor = Color.FromArgb(239, 68, 68);
+                    break;
+                case BiosSyncState.Scanning:
+                    lblBiosStatusVal.Text = "Scanning BIOS files...";
+                    lblBiosStatusVal.ForeColor = Color.FromArgb(245, 158, 11);
+                    break;
+                case BiosSyncState.Syncing:
+                    lblBiosStatusVal.Text = "Syncing...";
+                    lblBiosStatusVal.ForeColor = Color.FromArgb(59, 130, 246);
+                    break;
+            }
+        }
+
+        private void ShowSingleSyncSummaryDialog(BiosSyncResult result)
+        {
+            string statusText = result.State switch
+            {
+                BiosSyncState.SyncedSuccessfully => "Synced successfully",
+                BiosSyncState.NoCompatibleBiosFound => "No compatible BIOS found",
+                BiosSyncState.EmulatorNotInstalled => "Emulator not installed",
+                BiosSyncState.Failed => "Sync failed",
+                _ => result.State.ToString()
+            };
+
+            string msg = $"Emulator: {result.EmulatorName}\n" +
+                         $"Status: {statusText}\n" +
+                         $"Copied Files: {result.CopiedCount}\n" +
+                         $"Skipped Files: {result.SkippedCount}\n" +
+                         $"Destination Path: {(string.IsNullOrEmpty(result.DestinationPath) ? "N/A" : result.DestinationPath)}";
+
+            if (!string.IsNullOrEmpty(result.ErrorMessage))
+            {
+                msg += $"\n\nError: {result.ErrorMessage}";
+            }
+
+            MessageBoxIcon icon = result.State switch
+            {
+                BiosSyncState.SyncedSuccessfully => MessageBoxIcon.Information,
+                BiosSyncState.NoCompatibleBiosFound => MessageBoxIcon.Warning,
+                _ => MessageBoxIcon.Error
+            };
+
+            MessageBox.Show(msg, $"{result.EmulatorName} BIOS Sync Summary", MessageBoxButtons.OK, icon);
+        }
+
+        private void ShowGlobalSyncSummaryDialog(List<BiosSyncResult> results)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Global BIOS Synchronization Summary:");
+            sb.AppendLine("------------------------------------");
+
+            foreach (var res in results)
+            {
+                string statusText = res.State switch
+                {
+                    BiosSyncState.SyncedSuccessfully => "Synced successfully",
+                    BiosSyncState.NoCompatibleBiosFound => "No compatible BIOS found",
+                    BiosSyncState.EmulatorNotInstalled => "Emulator not installed",
+                    BiosSyncState.Failed => "Sync failed",
+                    _ => res.State.ToString()
+                };
+
+                sb.AppendLine($"• {res.EmulatorName}: {statusText}");
+                sb.AppendLine($"  - Copied: {res.CopiedCount}, Skipped: {res.SkippedCount}");
+                sb.AppendLine($"  - Destination: {(string.IsNullOrEmpty(res.DestinationPath) ? "N/A" : res.DestinationPath)}");
+                if (!string.IsNullOrEmpty(res.ErrorMessage))
+                {
+                    sb.AppendLine($"  - Error: {res.ErrorMessage}");
+                }
+                sb.AppendLine();
+            }
+
+            MessageBox.Show(sb.ToString().TrimEnd(), "Global BIOS Sync Summary", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 }

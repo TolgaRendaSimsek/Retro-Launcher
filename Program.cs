@@ -15,6 +15,7 @@ static class Program
         EmulatorUpdateServiceTests.RunTests();
         GitHubReleaseProviderTests.RunTests();
         EmulatorInstallationServiceTests.RunTests();
+        BiosSynchronizationServiceTests.RunTests();
 #endif
         // To customize application configuration such as set high DPI settings or default font,
         // see https://aka.ms/applicationconfiguration.

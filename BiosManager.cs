@@ -458,75 +458,11 @@ namespace RetroLauncher
 
         public bool SyncBiosToEmulator(BiosItem item)
         {
-            string centralFolder = Path.GetDirectoryName(ResolvePath(item.Path)) ?? "";
-            if (!Directory.Exists(centralFolder)) return false;
-
+            if (item == null) return false;
             try
             {
-                var files = Directory.GetFiles(centralFolder, "*.*", SearchOption.AllDirectories);
-                var validFiles = files.Where(f => 
-                    f.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || 
-                    f.EndsWith(".rom", StringComparison.OrdinalIgnoreCase) || 
-                    f.EndsWith(".pup", StringComparison.OrdinalIgnoreCase) ||
-                    f.EndsWith(".prx", StringComparison.OrdinalIgnoreCase)).ToList();
-
-                if (!validFiles.Any()) return false;
-
-                string destFolder = ResolvePath(GetEmulatorExpectedFolder(item.Emulator, item.Platform));
-                if (!Directory.Exists(destFolder))
-                {
-                    Directory.CreateDirectory(destFolder);
-                }
-
-                foreach (var file in validFiles)
-                {
-                    string destFile = Path.Combine(destFolder, Path.GetFileName(file));
-                    File.Copy(file, destFile, true);
-
-                    // For DuckStation, create portable.txt beside execution folder
-                    if (string.Equals(item.Emulator, "DuckStation", StringComparison.OrdinalIgnoreCase))
-                    {
-                        string emuDir = Path.GetDirectoryName(destFolder) ?? "";
-                        if (!string.IsNullOrEmpty(emuDir) && Directory.Exists(emuDir))
-                        {
-                            var exes = Directory.GetFiles(emuDir, "*.exe", SearchOption.AllDirectories);
-                            foreach (var exe in exes)
-                            {
-                                string portableFile = Path.Combine(Path.GetDirectoryName(exe) ?? "", "portable.txt");
-                                if (!File.Exists(portableFile))
-                                {
-                                    File.WriteAllText(portableFile, "");
-                                }
-                            }
-                        }
-                    }
-
-                    // For RPCS3, silently install firmware PUP package to generate dev_flash
-                    if (string.Equals(item.Emulator, "RPCS3", StringComparison.OrdinalIgnoreCase))
-                    {
-                        string emuDir = Path.GetFullPath(Path.Combine(destFolder, ".."));
-                        string rpcs3Exe = Path.Combine(emuDir, "rpcs3.exe");
-                        if (File.Exists(rpcs3Exe))
-                        {
-                            var psi = new ProcessStartInfo
-                            {
-                                FileName = rpcs3Exe,
-                                Arguments = $"--installfw \"{destFile}\"",
-                                UseShellExecute = false,
-                                CreateNoWindow = true
-                            };
-                            try
-                            {
-                                using (var p = Process.Start(psi))
-                                {
-                                    p?.WaitForExit(15000);
-                                }
-                            }
-                            catch { }
-                        }
-                    }
-                }
-                return true;
+                var result = BiosSynchronizationService.Instance.SyncEmulatorBiosAsync(item.Emulator).GetAwaiter().GetResult();
+                return result.State == BiosSyncState.SyncedSuccessfully;
             }
             catch (Exception ex)
             {
