@@ -28,4 +28,6 @@ global using RetroLauncher.Infrastructure.Storage;
 global using RetroLauncher.Resources.Localization;
 global using RetroLauncher.UI.Forms;
 global using RetroLauncher.UI.Controls;
+global using RetroLauncher.UI.Theme;
+global using System.ComponentModel;
 global using RetroLauncher.Tests.Unit;

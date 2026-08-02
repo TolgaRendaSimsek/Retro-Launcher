@@ -50,6 +50,7 @@ namespace RetroLauncher.UI.Forms
             InitializeComponent();
             SetupFormEvents();
             SetupResponsiveLayout();
+            SetupModernLauncherShell();
         }
 
         private void SetupFormEvents()
@@ -510,6 +511,248 @@ namespace RetroLauncher.UI.Forms
             {
                 ToggleFullscreen();
             }
+        }
+
+        private Panel _pnlContentHost = null!;
+        private Label _lblHeaderPageTitle = null!;
+        private NavigationItem _navHome = null!;
+        private NavigationItem _navLibrary = null!;
+        private NavigationItem _navEmulators = null!;
+        private NavigationItem _navControllers = null!;
+        private NavigationItem _navBios = null!;
+        private NavigationItem _navDownloads = null!;
+        private NavigationItem _navSettings = null!;
+
+        private HomePageView? _homePageView;
+        private Panel? _pnlLibraryView;
+        private Form? _embeddedEmuForm;
+        private Form? _embeddedCtrlForm;
+        private Form? _embeddedBiosForm;
+        private Form? _embeddedPkgForm;
+        private Form? _embeddedSettingsForm;
+
+        private void SetupModernLauncherShell()
+        {
+            this.ClientSize = new Size(1150, 680);
+            this.MinimumSize = new Size(980, 600);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.BackColor = AppTheme.Current.Colors.Background;
+            this.ForeColor = AppTheme.Current.Colors.TextPrimary;
+
+            // Preserve existing library panel view
+            _pnlLibraryView = new Panel { Dock = DockStyle.Fill };
+            foreach (Control ctrl in this.Controls.Cast<Control>().ToList())
+            {
+                if (ctrl != msMain)
+                {
+                    this.Controls.Remove(ctrl);
+                    _pnlLibraryView.Controls.Add(ctrl);
+                }
+            }
+
+            // Left Navigation Sidebar
+            var pnlSidebarNav = new TableLayoutPanel
+            {
+                Dock = DockStyle.Left,
+                Width = 210,
+                ColumnCount = 1,
+                RowCount = 10,
+                Padding = new Padding(6),
+                BackColor = AppTheme.Current.Colors.SidebarBackground
+            };
+            pnlSidebarNav.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            var lblLogoHeader = new Label
+            {
+                Text = "🚀 RETRO LAUNCHER",
+                Font = AppTheme.Current.Fonts.TitleSmall,
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Dock = DockStyle.Top,
+                Height = 44,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Margin = new Padding(0, 4, 0, 12)
+            };
+            pnlSidebarNav.Controls.Add(lblLogoHeader, 0, 0);
+
+            _navHome = new NavigationItem { Icon = "🏠", Title = "Home", TargetPage = "Home", IsSelected = true };
+            _navHome.SetToolTip("Go to Home Dashboard");
+            _navHome.Click += (s, e) => SwitchPage(_navHome, "Home");
+
+            _navLibrary = new NavigationItem { Icon = "📚", Title = "Library", TargetPage = "Library" };
+            _navLibrary.SetToolTip("Browse Game Library");
+            _navLibrary.Click += (s, e) => SwitchPage(_navLibrary, "Library");
+
+            _navEmulators = new NavigationItem { Icon = "🎮", Title = "Emulators", TargetPage = "Emulators" };
+            _navEmulators.SetToolTip("Manage Installed Emulators");
+            _navEmulators.Click += (s, e) => SwitchPage(_navEmulators, "Emulators");
+
+            _navControllers = new NavigationItem { Icon = "🕹️", Title = "Controllers", TargetPage = "Controllers" };
+            _navControllers.SetToolTip("Configure Controllers & Profiles");
+            _navControllers.Click += (s, e) => SwitchPage(_navControllers, "Controllers");
+
+            _navBios = new NavigationItem { Icon = "🔄", Title = "BIOS Manager", TargetPage = "BIOS" };
+            _navBios.SetToolTip("Manage System Firmware & BIOS");
+            _navBios.Click += (s, e) => SwitchPage(_navBios, "BIOS");
+
+            _navDownloads = new NavigationItem { Icon = "📦", Title = "Downloads", TargetPage = "Downloads" };
+            _navDownloads.SetToolTip("Package Management & Downloads");
+            _navDownloads.Click += (s, e) => SwitchPage(_navDownloads, "Downloads");
+
+            _navSettings = new NavigationItem { Icon = "⚙️", Title = "Settings", TargetPage = "Settings" };
+            _navSettings.SetToolTip("Launcher Appearance & Settings");
+            _navSettings.Click += (s, e) => SwitchPage(_navSettings, "Settings");
+
+            pnlSidebarNav.Controls.Add(_navHome, 0, 1);
+            pnlSidebarNav.Controls.Add(_navLibrary, 0, 2);
+            pnlSidebarNav.Controls.Add(_navEmulators, 0, 3);
+            pnlSidebarNav.Controls.Add(_navControllers, 0, 4);
+            pnlSidebarNav.Controls.Add(_navBios, 0, 5);
+            pnlSidebarNav.Controls.Add(_navDownloads, 0, 6);
+            pnlSidebarNav.Controls.Add(_navSettings, 0, 7);
+
+            pnlSidebarNav.Controls.Add(new Panel { Dock = DockStyle.Fill }, 0, 8);
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var btnCollapse = new ModernButton { Text = "◀ Collapse", Size = new Size(198, 32), IsPrimary = false };
+            btnCollapse.Click += (s, e) =>
+            {
+                if (pnlSidebarNav.Width == 210)
+                {
+                    pnlSidebarNav.Width = 60;
+                    btnCollapse.Text = "▶";
+                    lblLogoHeader.Text = "🚀";
+                }
+                else
+                {
+                    pnlSidebarNav.Width = 210;
+                    btnCollapse.Text = "◀ Collapse";
+                    lblLogoHeader.Text = "🚀 RETRO LAUNCHER";
+                }
+            };
+            pnlSidebarNav.Controls.Add(btnCollapse, 0, 9);
+
+            this.Controls.Add(pnlSidebarNav);
+
+            // Top Header Bar
+            var pnlTopHeader = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 50,
+                ColumnCount = 4,
+                RowCount = 1,
+                Padding = new Padding(12, 8, 12, 8),
+                BackColor = AppTheme.Current.Colors.TopBarBackground
+            };
+            pnlTopHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            pnlTopHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlTopHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            pnlTopHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            _lblHeaderPageTitle = new Label
+            {
+                Text = "Home",
+                Font = AppTheme.Current.Fonts.TitleMedium,
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 20, 0)
+            };
+            pnlTopHeader.Controls.Add(_lblHeaderPageTitle, 0, 0);
+
+            var searchBoxTop = new SearchBox { PlaceholderText = "Search games, platforms, emulators...", Width = 320, Anchor = AnchorStyles.Right };
+            searchBoxTop.SearchTextChanged += (s, e) =>
+            {
+                tbSearch.Text = searchBoxTop.SearchText;
+                if (_lblHeaderPageTitle.Text != "Library")
+                {
+                    SwitchPage(_navLibrary, "Library");
+                }
+            };
+            pnlTopHeader.Controls.Add(searchBoxTop, 1, 0);
+
+            var btnNotification = new ModernButton { Text = "🔔 Notifications", Size = new Size(120, 32), IsPrimary = false, Anchor = AnchorStyles.Right, Margin = new Padding(8, 0, 0, 0) };
+            btnNotification.Click += (s, e) => ToastNotification.ShowToast(this, "No new notifications", StatusType.Info);
+            pnlTopHeader.Controls.Add(btnNotification, 2, 0);
+
+            this.Controls.Add(pnlTopHeader);
+
+            // Main Content Host Region
+            _pnlContentHost = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = AppTheme.Current.Colors.Background
+            };
+            this.Controls.Add(_pnlContentHost);
+
+            // Home Page Initialization
+            _homePageView = new HomePageView();
+            _homePageView.AddGameRequested += (s, e) => SwitchPage(_navLibrary, "Library");
+            _homePageView.ManageEmulatorsRequested += (s, e) => SwitchPage(_navEmulators, "Emulators");
+            _homePageView.SyncBiosRequested += (s, e) => SwitchPage(_navBios, "BIOS");
+            _homePageView.SyncControllersRequested += (s, e) => SwitchPage(_navControllers, "Controllers");
+            _homePageView.PlayGameRequested += (s, game) =>
+            {
+                _selectedGame = game;
+                btnPlay_Click(s, EventArgs.Empty);
+            };
+
+            // Display Home Page by Default
+            SwitchPage(_navHome, "Home");
+        }
+
+        private void SwitchPage(NavigationItem navItem, string pageName)
+        {
+            _navHome.IsSelected = false;
+            _navLibrary.IsSelected = false;
+            _navEmulators.IsSelected = false;
+            _navControllers.IsSelected = false;
+            _navBios.IsSelected = false;
+            _navDownloads.IsSelected = false;
+            _navSettings.IsSelected = false;
+
+            navItem.IsSelected = true;
+            _lblHeaderPageTitle.Text = pageName;
+            _pnlContentHost.Controls.Clear();
+
+            switch (pageName)
+            {
+                case "Home":
+                    _homePageView ??= new HomePageView();
+                    _pnlContentHost.Controls.Add(_homePageView);
+                    break;
+                case "Library":
+                    if (_pnlLibraryView != null)
+                        _pnlContentHost.Controls.Add(_pnlLibraryView);
+                    break;
+                case "Emulators":
+                    EmbedForm(ref _embeddedEmuForm, () => new EmulatorManagerForm());
+                    break;
+                case "Controllers":
+                    EmbedForm(ref _embeddedCtrlForm, () => new ControllerManagerForm());
+                    break;
+                case "BIOS":
+                    EmbedForm(ref _embeddedBiosForm, () => new BiosManagerForm());
+                    break;
+                case "Downloads":
+                    EmbedForm(ref _embeddedPkgForm, () => new PackageManagerForm());
+                    break;
+                case "Settings":
+                    EmbedForm(ref _embeddedSettingsForm, () => new AppearanceSettingsForm());
+                    break;
+            }
+        }
+
+        private void EmbedForm<T>(ref Form? formField, Func<T> factory) where T : Form
+        {
+            if (formField == null || formField.IsDisposed)
+            {
+                formField = factory();
+            }
+            formField.TopLevel = false;
+            formField.FormBorderStyle = FormBorderStyle.None;
+            formField.Dock = DockStyle.Fill;
+            _pnlContentHost.Controls.Add(formField);
+            formField.Show();
         }
 
         private void flpGamesGrid_SizeChanged()
