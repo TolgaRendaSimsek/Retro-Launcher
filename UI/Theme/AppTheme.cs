@@ -11,6 +11,9 @@ namespace RetroLauncher.UI.Theme
         public ThemeColors Colors { get; } = new ThemeColors();
         public ThemeFonts Fonts { get; } = new ThemeFonts();
         public ThemeSpacing Spacing { get; } = new ThemeSpacing();
+        public ThemeDimensions Dimensions { get; } = new ThemeDimensions();
+        public ThemeRadius Radius { get; } = new ThemeRadius();
+        public ThemeShadows Shadows { get; } = new ThemeShadows();
 
         public bool EnableAnimations { get; set; } = true;
         public string Density { get; set; } = "Comfortable";

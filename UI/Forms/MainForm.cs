@@ -827,7 +827,7 @@ namespace RetroLauncher.UI.Forms
                     pageControl = GetEmbeddedForm(ref _embeddedEmuForm, () => new EmulatorManagerForm());
                     break;
                 case "Controllers":
-                    pageControl = GetEmbeddedForm(ref _embeddedCtrlForm, () => new ControllerManagerForm());
+                    pageControl = GetEmbeddedForm(ref _embeddedCtrlForm, () => new GlobalControllerSettingsForm());
                     break;
                 case "BIOS":
                     pageControl = GetEmbeddedForm(ref _embeddedBiosForm, () => new BiosManagerForm());

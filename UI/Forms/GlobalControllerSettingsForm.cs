@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using RetroLauncher.UI.Controls;
+using RetroLauncher.UI.Theme;
 
 namespace RetroLauncher.UI.Forms
 {
@@ -20,7 +22,6 @@ namespace RetroLauncher.UI.Forms
         private CheckBox chkInvertRY = null!;
         private CheckBox chkEnableRumble = null!;
         private NumericUpDown nudRumbleStrength = null!;
-
         private CheckBox chkAutoSyncOnLaunch = null!;
 
         // Hotkeys
@@ -34,9 +35,8 @@ namespace RetroLauncher.UI.Forms
         // Mapping Inputs Cache
         private Dictionary<string, TextBox> _mappingInputs = new(StringComparer.OrdinalIgnoreCase);
 
-        private Button btnSave = null!;
-        private Button btnSyncAll = null!;
-        private Button btnClose = null!;
+        private ModernButton btnSave = null!;
+        private ModernButton btnSyncAll = null!;
 
         private int _selectedPlayerIndex = 1;
 
@@ -50,105 +50,125 @@ namespace RetroLauncher.UI.Forms
         private void InitializeComponent()
         {
             this.Text = "Global Controller Settings";
-            this.Size = new Size(820, 680);
+            this.Size = new Size(880, 640);
+            this.MinimumSize = new Size(800, 560);
             this.StartPosition = FormStartPosition.CenterParent;
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
-            this.BackColor = Color.FromArgb(24, 24, 28);
-            this.ForeColor = Color.White;
+            this.BackColor = AppTheme.Current.Colors.Background;
+            this.ForeColor = AppTheme.Current.Colors.TextPrimary;
+            this.Padding = new Padding(24, 16, 24, 16);
+            this.AutoScroll = true;
         }
 
         private void SetupFormLayout()
         {
-            // Title Header
+            this.Controls.Clear();
+
+            var tlpMain = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 1,
+                RowCount = 5,
+                Margin = new Padding(0)
+            };
+            tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            // Header Section
+            var pnlHeader = new Panel { Dock = DockStyle.Top, Height = 44, Margin = new Padding(0, 0, 0, 16) };
             Label lblTitle = new Label
             {
-                Text = "🎮 Master Controller Configuration",
-                Font = new Font("Segoe UI", 14F, FontStyle.Bold),
-                Location = new Point(20, 15),
-                AutoSize = true,
-                ForeColor = Color.White
+                Text = "🕹️ Master Controller Configuration",
+                Font = AppTheme.Current.Fonts.TitleSmall,
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Location = new Point(0, 8),
+                AutoSize = true
             };
-            this.Controls.Add(lblTitle);
-
-            // Auto-Sync Toggle
             chkAutoSyncOnLaunch = new CheckBox
             {
                 Text = "Automatically sync global profile to emulators on launch",
-                Location = new Point(420, 20),
-                AutoSize = true,
-                Font = new Font("Segoe UI", 9F, FontStyle.Regular),
-                ForeColor = Color.FromArgb(209, 213, 219)
+                Font = AppTheme.Current.Fonts.BodySmall,
+                ForeColor = AppTheme.Current.Colors.TextSecondary,
+                Location = new Point(360, 10),
+                AutoSize = true
             };
-            this.Controls.Add(chkAutoSyncOnLaunch);
+            pnlHeader.Controls.Add(lblTitle);
+            pnlHeader.Controls.Add(chkAutoSyncOnLaunch);
+            tlpMain.Controls.Add(pnlHeader, 0, 0);
 
-            // Player Selection Bar
-            Label lblPlayer = new Label
-            {
-                Text = "Select Player:",
-                Location = new Point(20, 55),
-                AutoSize = true,
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold)
-            };
-            this.Controls.Add(lblPlayer);
-
+            // Player Selector Row
+            var pnlPlayer = new Panel { Dock = DockStyle.Top, Height = 36, Margin = new Padding(0, 0, 0, 16) };
+            Label lblPlayer = new Label { Text = "Select Player Profile:", Font = AppTheme.Current.Fonts.BodyMedium, ForeColor = AppTheme.Current.Colors.TextPrimary, Location = new Point(0, 6), AutoSize = true };
             cbPlayerSelect = new ComboBox
             {
-                Location = new Point(120, 52),
-                Size = new Size(180, 25),
+                Location = new Point(160, 4),
+                Size = new Size(180, 26),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(44, 44, 52),
-                ForeColor = Color.White
+                BackColor = AppTheme.Current.Colors.Surface,
+                ForeColor = AppTheme.Current.Colors.TextPrimary
             };
             cbPlayerSelect.Items.AddRange(new object[] { "Player 1", "Player 2", "Player 3", "Player 4" });
             cbPlayerSelect.SelectedIndex = 0;
             cbPlayerSelect.SelectedIndexChanged += cbPlayerSelect_SelectedIndexChanged;
-            this.Controls.Add(cbPlayerSelect);
+            pnlPlayer.Controls.Add(lblPlayer);
+            pnlPlayer.Controls.Add(cbPlayerSelect);
+            tlpMain.Controls.Add(pnlPlayer, 0, 1);
 
-            // Group 1: Controller & Calibration
+            // Split Grid (Left: Calibration & Hotkeys, Right: Button Mappings)
+            var tlpSplit = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0, 0, 0, 16)
+            };
+            tlpSplit.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tlpSplit.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+
+            // Left Stack: Calibration + Hotkeys
+            var pnlLeftStack = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                Margin = new Padding(0, 0, 8, 0)
+            };
+
             GroupBox gbCalibration = new GroupBox
             {
                 Text = "Controller & Calibration",
-                Location = new Point(20, 90),
-                Size = new Size(370, 290),
-                ForeColor = Color.FromArgb(156, 163, 175),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Size = new Size(380, 270),
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Font = AppTheme.Current.Fonts.BodySmall,
+                Margin = new Padding(0, 0, 0, 12)
             };
 
-            Label lblType = new Label { Text = "Type:", Location = new Point(15, 25), AutoSize = true, ForeColor = Color.White };
-            cbControllerType = new ComboBox
-            {
-                Location = new Point(140, 22),
-                Size = new Size(200, 23),
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(44, 44, 52),
-                ForeColor = Color.White
-            };
+            Label lblType = new Label { Text = "Type:", Location = new Point(15, 25), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            cbControllerType = new ComboBox { Location = new Point(140, 22), Size = new Size(210, 23), DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
             cbControllerType.Items.AddRange(new object[] { "XInput", "DirectInput", "Keyboard", "Disabled" });
 
-            Label lblDevice = new Label { Text = "Device Name:", Location = new Point(15, 55), AutoSize = true, ForeColor = Color.White };
-            tbDeviceGuid = new TextBox { Location = new Point(140, 52), Size = new Size(200, 23), BackColor = Color.FromArgb(44, 44, 52), ForeColor = Color.White };
+            Label lblDevice = new Label { Text = "Device Name:", Location = new Point(15, 55), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            tbDeviceGuid = new TextBox { Location = new Point(140, 52), Size = new Size(210, 23), BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            Label lblDeadzone = new Label { Text = "Deadzone:", Location = new Point(15, 85), AutoSize = true, ForeColor = Color.White };
-            nudDeadzone = new NumericUpDown { Location = new Point(140, 82), Size = new Size(80, 23), DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.00m, Maximum = 0.50m, BackColor = Color.FromArgb(44, 44, 52), ForeColor = Color.White };
+            Label lblDeadzone = new Label { Text = "Deadzone:", Location = new Point(15, 85), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            nudDeadzone = new NumericUpDown { Location = new Point(140, 82), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.00m, Maximum = 0.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            Label lblSensitivity = new Label { Text = "Sensitivity:", Location = new Point(15, 115), AutoSize = true, ForeColor = Color.White };
-            nudSensitivity = new NumericUpDown { Location = new Point(140, 112), Size = new Size(80, 23), DecimalPlaces = 2, Increment = 0.10m, Minimum = 0.50m, Maximum = 2.50m, BackColor = Color.FromArgb(44, 44, 52), ForeColor = Color.White };
+            Label lblSensitivity = new Label { Text = "Sensitivity:", Location = new Point(15, 115), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            nudSensitivity = new NumericUpDown { Location = new Point(140, 112), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.10m, Minimum = 0.50m, Maximum = 2.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            Label lblTrigger = new Label { Text = "Trigger Threshold:", Location = new Point(15, 145), AutoSize = true, ForeColor = Color.White };
-            nudTriggerThreshold = new NumericUpDown { Location = new Point(140, 142), Size = new Size(80, 23), DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.00m, Maximum = 0.50m, BackColor = Color.FromArgb(44, 44, 52), ForeColor = Color.White };
+            Label lblTrigger = new Label { Text = "Trigger Threshold:", Location = new Point(15, 145), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            nudTriggerThreshold = new NumericUpDown { Location = new Point(140, 142), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.00m, Maximum = 0.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            chkInvertLX = new CheckBox { Text = "Invert Left X", Location = new Point(15, 175), AutoSize = true, ForeColor = Color.White };
-            chkInvertLY = new CheckBox { Text = "Invert Left Y", Location = new Point(140, 175), AutoSize = true, ForeColor = Color.White };
-            chkInvertRX = new CheckBox { Text = "Invert Right X", Location = new Point(15, 200), AutoSize = true, ForeColor = Color.White };
-            chkInvertRY = new CheckBox { Text = "Invert Right Y", Location = new Point(140, 200), AutoSize = true, ForeColor = Color.White };
+            chkInvertLX = new CheckBox { Text = "Invert Left X", Location = new Point(15, 175), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            chkInvertLY = new CheckBox { Text = "Invert Left Y", Location = new Point(140, 175), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            chkInvertRX = new CheckBox { Text = "Invert Right X", Location = new Point(15, 200), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            chkInvertRY = new CheckBox { Text = "Invert Right Y", Location = new Point(140, 200), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            chkEnableRumble = new CheckBox { Text = "Enable Rumble", Location = new Point(15, 230), AutoSize = true, ForeColor = Color.White };
-            Label lblRumbleStr = new Label { Text = "Strength:", Location = new Point(140, 230), AutoSize = true, ForeColor = Color.White };
-            nudRumbleStrength = new NumericUpDown { Location = new Point(210, 227), Size = new Size(80, 23), DecimalPlaces = 2, Increment = 0.10m, Minimum = 0.00m, Maximum = 1.00m, BackColor = Color.FromArgb(44, 44, 52), ForeColor = Color.White };
+            chkEnableRumble = new CheckBox { Text = "Enable Rumble", Location = new Point(15, 230), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            Label lblRumbleStr = new Label { Text = "Strength:", Location = new Point(140, 230), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            nudRumbleStrength = new NumericUpDown { Location = new Point(210, 227), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.10m, Minimum = 0.00m, Maximum = 1.00m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
             gbCalibration.Controls.Add(lblType); gbCalibration.Controls.Add(cbControllerType);
             gbCalibration.Controls.Add(lblDevice); gbCalibration.Controls.Add(tbDeviceGuid);
@@ -158,16 +178,14 @@ namespace RetroLauncher.UI.Forms
             gbCalibration.Controls.Add(chkInvertLX); gbCalibration.Controls.Add(chkInvertLY);
             gbCalibration.Controls.Add(chkInvertRX); gbCalibration.Controls.Add(chkInvertRY);
             gbCalibration.Controls.Add(chkEnableRumble); gbCalibration.Controls.Add(lblRumbleStr); gbCalibration.Controls.Add(nudRumbleStrength);
-            this.Controls.Add(gbCalibration);
+            pnlLeftStack.Controls.Add(gbCalibration);
 
-            // Group 2: Hotkeys
             GroupBox gbHotkeys = new GroupBox
             {
                 Text = "Global Hotkeys",
-                Location = new Point(20, 390),
-                Size = new Size(370, 220),
-                ForeColor = Color.FromArgb(156, 163, 175),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Size = new Size(380, 210),
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Font = AppTheme.Current.Fonts.BodySmall
             };
 
             tbHotkeyPause = AddHotkeyRow(gbHotkeys, "Pause:", "P", 25);
@@ -176,22 +194,24 @@ namespace RetroLauncher.UI.Forms
             tbHotkeyFastForward = AddHotkeyRow(gbHotkeys, "Fast Forward:", "Tab", 115);
             tbHotkeyScreenshot = AddHotkeyRow(gbHotkeys, "Screenshot:", "F12", 145);
             tbHotkeyMenu = AddHotkeyRow(gbHotkeys, "Toggle Menu:", "Escape", 175);
-            this.Controls.Add(gbHotkeys);
+            pnlLeftStack.Controls.Add(gbHotkeys);
 
-            // Group 3: Button Mappings
+            tlpSplit.Controls.Add(pnlLeftStack, 0, 0);
+
+            // Right Stack: Button Mappings
             GroupBox gbMappings = new GroupBox
             {
                 Text = "Button & Direction Mappings",
-                Location = new Point(410, 55),
-                Size = new Size(380, 555),
-                ForeColor = Color.FromArgb(156, 163, 175),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Dock = DockStyle.Fill,
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Font = AppTheme.Current.Fonts.BodySmall,
+                Margin = new Padding(8, 0, 0, 0)
             };
 
             Panel pnlMapScroll = new Panel
             {
-                Location = new Point(10, 20),
-                Size = new Size(360, 525),
+                Dock = DockStyle.Fill,
+                Padding = new Padding(8),
                 AutoScroll = true
             };
 
@@ -199,67 +219,45 @@ namespace RetroLauncher.UI.Forms
             int yPos = 5;
             foreach (var kvp in defaultMappings)
             {
-                Label lblKey = new Label { Text = kvp.Key.Replace("_", " "), Location = new Point(5, yPos + 3), Size = new Size(140, 20), ForeColor = Color.White, Font = new Font("Segoe UI", 8.5F, FontStyle.Regular) };
-                TextBox tbInput = new TextBox { Text = kvp.Value, Location = new Point(150, yPos), Size = new Size(180, 22), BackColor = Color.FromArgb(44, 44, 52), ForeColor = Color.White };
-                
+                Label lblKey = new Label { Text = kvp.Key.Replace("_", " "), Location = new Point(5, yPos + 3), Size = new Size(130, 20), ForeColor = AppTheme.Current.Colors.TextPrimary, Font = AppTheme.Current.Fonts.BodySmall };
+                TextBox tbInput = new TextBox { Text = kvp.Value, Location = new Point(140, yPos), Size = new Size(180, 22), BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
+
                 pnlMapScroll.Controls.Add(lblKey);
                 pnlMapScroll.Controls.Add(tbInput);
                 _mappingInputs[kvp.Key] = tbInput;
 
                 yPos += 28;
             }
-
             gbMappings.Controls.Add(pnlMapScroll);
-            this.Controls.Add(gbMappings);
+            tlpSplit.Controls.Add(gbMappings, 1, 0);
 
-            // Bottom Command Buttons
-            btnSave = new Button
+            tlpMain.Controls.Add(tlpSplit, 0, 2);
+
+            // Action Buttons Row
+            var flpActionButtons = new FlowLayoutPanel
             {
-                Text = "💾 Save & Apply Profile",
-                Location = new Point(20, 620),
-                Size = new Size(180, 35),
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(16, 185, 129),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Margin = new Padding(0, 8, 0, 0)
             };
-            btnSave.FlatAppearance.BorderSize = 0;
+
+            btnSave = new ModernButton { Text = "💾 Save & Apply Profile", Size = new Size(180, 36), IsPrimary = true, Margin = new Padding(0, 0, 12, 0) };
             btnSave.Click += btnSave_Click;
-            this.Controls.Add(btnSave);
 
-            btnSyncAll = new Button
-            {
-                Text = "🔄 Sync All Emulators",
-                Location = new Point(210, 620),
-                Size = new Size(180, 35),
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(79, 70, 229),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
-            };
-            btnSyncAll.FlatAppearance.BorderSize = 0;
+            btnSyncAll = new ModernButton { Text = "🔄 Sync All Emulators", Size = new Size(180, 36), IsPrimary = false, Margin = new Padding(0) };
             btnSyncAll.Click += btnSyncAll_Click;
-            this.Controls.Add(btnSyncAll);
 
-            btnClose = new Button
-            {
-                Text = "Close",
-                Location = new Point(690, 620),
-                Size = new Size(100, 35),
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(107, 114, 128),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
-            };
-            btnClose.FlatAppearance.BorderSize = 0;
-            btnClose.Click += (s, e) => this.Close();
-            this.Controls.Add(btnClose);
+            flpActionButtons.Controls.Add(btnSave);
+            flpActionButtons.Controls.Add(btnSyncAll);
+            tlpMain.Controls.Add(flpActionButtons, 0, 3);
+
+            this.Controls.Add(tlpMain);
         }
 
         private TextBox AddHotkeyRow(GroupBox gb, string labelText, string defaultValue, int y)
         {
-            Label lbl = new Label { Text = labelText, Location = new Point(15, y + 3), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 8.5F, FontStyle.Regular) };
-            TextBox tb = new TextBox { Text = defaultValue, Location = new Point(140, y), Size = new Size(200, 22), BackColor = Color.FromArgb(44, 44, 52), ForeColor = Color.White };
+            Label lbl = new Label { Text = labelText, Location = new Point(15, y + 3), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary, Font = AppTheme.Current.Fonts.BodySmall };
+            TextBox tb = new TextBox { Text = defaultValue, Location = new Point(140, y), Size = new Size(210, 22), BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
             gb.Controls.Add(lbl);
             gb.Controls.Add(tb);
             return tb;
@@ -270,7 +268,6 @@ namespace RetroLauncher.UI.Forms
             var config = GlobalControllerConfigManager.Instance.Config;
             chkAutoSyncOnLaunch.Checked = config.AutoSyncOnLaunch;
 
-            // Load Hotkeys
             tbHotkeyPause.Text = config.Hotkeys.Pause;
             tbHotkeySaveState.Text = config.Hotkeys.SaveState;
             tbHotkeyLoadState.Text = config.Hotkeys.LoadState;
@@ -278,7 +275,6 @@ namespace RetroLauncher.UI.Forms
             tbHotkeyScreenshot.Text = config.Hotkeys.Screenshot;
             tbHotkeyMenu.Text = config.Hotkeys.ToggleMenu;
 
-            // Load Player Config
             LoadPlayerConfig(_selectedPlayerIndex);
         }
 
@@ -369,12 +365,10 @@ namespace RetroLauncher.UI.Forms
             {
                 var syncResults = await ControllerSyncService.Instance.SyncAllEmulatorsAsync(this);
                 int successCount = syncResults.Count(r => r.Success);
-                MessageBox.Show(
+                ToastNotification.ShowToast(
                     this,
-                    $"Global controller settings saved successfully!\nApplied to {successCount} / {syncResults.Count} emulators.",
-                    "Controller Profile Saved",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                    $"Global controller settings saved & applied to {successCount} / {syncResults.Count} emulators.",
+                    StatusType.Success);
             }
             finally
             {
