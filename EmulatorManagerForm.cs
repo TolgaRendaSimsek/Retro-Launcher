@@ -13,6 +13,7 @@ namespace RetroLauncher
         private EmulatorConfig _config = new();
         private bool _isUpdatingSelection = false;
 
+        private SplitContainer splitContainer = null!;
         private Button btnCancel = null!;
         private Button btnInstall = null!;
         private Button btnReinstall = null!;
@@ -27,12 +28,17 @@ namespace RetroLauncher
         private Button btnImportControllerSettings = null!;
         private Button btnExportControllerSettings = null!;
         private Button btnSyncAllControllers = null!;
+        private Button btnDuckStationApi = null!;
         private Label lblChannel = null!;
         private ComboBox cbChannel = null!;
         private Label lblBiosHeader = null!;
         private Label lblBiosStatusVal = null!;
         private Label lblLastUpdateHeader = null!;
         private Label lblLastUpdateVal = null!;
+        private TableLayoutPanel pnlProgress = null!;
+        private FlowLayoutPanel flpActionButtons = null!;
+        private FlowLayoutPanel flpControllerButtons = null!;
+        private FlowLayoutPanel flpFooterButtons = null!;
         private DateTime _lastUpdateCheck = DateTime.MinValue;
         private bool _isInstalling = false;
         private CancellationTokenSource? _cts;
@@ -59,10 +65,243 @@ namespace RetroLauncher
         private void SetupForm()
         {
             this.Load += EmulatorManagerForm_Load;
-            lbEmulators.SelectedIndexChanged += lbEmulators_SelectedIndexChanged;
+            this.ClientSize = new Size(820, 600);
+            this.MinimumSize = new Size(760, 560);
+            this.FormBorderStyle = FormBorderStyle.Sizable;
+            this.AutoScaleMode = AutoScaleMode.Dpi;
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.BackColor = Color.FromArgb(20, 20, 25);
+            this.ForeColor = Color.White;
 
-            // Edit fields event
+            this.Controls.Clear();
+
+            // Root layout: SplitContainer dividing Left List/Global buttons and Right Detail panel
+            splitContainer = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                SplitterDistance = 230,
+                SplitterWidth = 6,
+                BackColor = Color.FromArgb(30, 30, 38)
+            };
+            this.Controls.Add(splitContainer);
+
+            // -------------------------------------------------------------
+            // LEFT PANEL SETUP
+            // -------------------------------------------------------------
+            var pnlLeft = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 4,
+                Padding = new Padding(8),
+                BackColor = Color.FromArgb(20, 20, 25)
+            };
+            pnlLeft.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlLeft.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pnlLeft.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            pnlLeft.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pnlLeft.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var lblEmulatorsHeader = new Label
+            {
+                Text = "Emulators",
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                ForeColor = Color.White,
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 6)
+            };
+            pnlLeft.Controls.Add(lblEmulatorsHeader, 0, 0);
+
+            lbEmulators.Dock = DockStyle.Fill;
+            lbEmulators.DrawMode = DrawMode.OwnerDrawFixed;
+            lbEmulators.ItemHeight = 44;
+            lbEmulators.DrawItem += lbEmulators_DrawItem;
+            lbEmulators.SelectedIndexChanged += lbEmulators_SelectedIndexChanged;
+            pnlLeft.Controls.Add(lbEmulators, 0, 1);
+
+            var flpLeftAddRemove = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                WrapContents = true,
+                Margin = new Padding(0, 6, 0, 6)
+            };
+
+            btnAdd = new Button
+            {
+                Text = "➕ Add",
+                Size = new Size(100, 32),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(16, 185, 129),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 0)
+            };
+            btnAdd.FlatAppearance.BorderSize = 0;
+            btnAdd.Click += btnAdd_Click;
+
+            btnRemove = new Button
+            {
+                Text = "❌ Remove",
+                Size = new Size(100, 32),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(239, 68, 68),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Margin = new Padding(0)
+            };
+            btnRemove.FlatAppearance.BorderSize = 0;
+            btnRemove.Click += btnRemove_Click;
+
+            flpLeftAddRemove.Controls.Add(btnAdd);
+            flpLeftAddRemove.Controls.Add(btnRemove);
+            pnlLeft.Controls.Add(flpLeftAddRemove, 0, 2);
+
+            var flpLeftGlobals = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                WrapContents = true,
+                Margin = new Padding(0)
+            };
+
+            Button btnHealthCheck = new Button
+            {
+                Text = "🔍 Health",
+                Size = new Size(66, 30),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(79, 70, 229),
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 4, 4)
+            };
+            btnHealthCheck.FlatAppearance.BorderSize = 0;
+            btnHealthCheck.Click += btnHealthCheck_Click;
+
+            btnSyncAllBios = new Button
+            {
+                Text = "🔄 BIOS",
+                Size = new Size(66, 30),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(16, 185, 129),
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 4, 4)
+            };
+            btnSyncAllBios.FlatAppearance.BorderSize = 0;
+            btnSyncAllBios.Click += btnSyncAllBios_Click;
+
+            btnSyncAllControllers = new Button
+            {
+                Text = "🎮 Controls",
+                Size = new Size(72, 30),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(99, 102, 241),
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 0, 4)
+            };
+            btnSyncAllControllers.FlatAppearance.BorderSize = 0;
+            btnSyncAllControllers.Click += btnSyncAllControllers_Click;
+
+            flpLeftGlobals.Controls.Add(btnHealthCheck);
+            flpLeftGlobals.Controls.Add(btnSyncAllBios);
+            flpLeftGlobals.Controls.Add(btnSyncAllControllers);
+            pnlLeft.Controls.Add(flpLeftGlobals, 0, 3);
+
+            splitContainer.Panel1.Controls.Add(pnlLeft);
+
+            // -------------------------------------------------------------
+            // RIGHT PANEL SETUP
+            // -------------------------------------------------------------
+            var pnlRightMain = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                ColumnCount = 1,
+                RowCount = 8,
+                Padding = new Padding(12),
+                BackColor = Color.FromArgb(24, 24, 30)
+            };
+            pnlRightMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            pnlRightMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pnlRightMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pnlRightMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pnlRightMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pnlRightMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pnlRightMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pnlRightMain.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            pnlRightMain.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            // --- Row 0: Details Grid ---
+            var tblDetailsGrid = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 2,
+                RowCount = 7,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            tblDetailsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115F));
+            tblDetailsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            for (int r = 0; r < 7; r++)
+                tblDetailsGrid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            // Name
+            lblName = new Label
+            {
+                Text = "Name:",
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(156, 163, 175),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 4, 6)
+            };
+            tbName = new TextBox
+            {
+                Dock = DockStyle.Top,
+                BackColor = Color.FromArgb(44, 44, 52),
+                ForeColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 9.5F),
+                Margin = new Padding(0, 4, 0, 6)
+            };
             tbName.TextChanged += (s, e) => SaveSelectedFields();
+            tblDetailsGrid.Controls.Add(lblName, 0, 0);
+            tblDetailsGrid.Controls.Add(tbName, 1, 0);
+
+            // Path + Browse
+            lblPath = new Label
+            {
+                Text = "Executable:",
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(156, 163, 175),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 4, 6)
+            };
+
+            var pnlPathBrowse = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0, 0, 0, 6)
+            };
+            pnlPathBrowse.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlPathBrowse.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            tbPath = new TextBox
+            {
+                Dock = DockStyle.Top,
+                BackColor = Color.FromArgb(44, 44, 52),
+                ForeColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 9.5F),
+                Margin = new Padding(0, 0, 4, 0)
+            };
             tbPath.TextChanged += (s, e) => {
                 if (lbEmulators.SelectedItem is EmulatorItem selectedEmu)
                 {
@@ -70,335 +309,477 @@ namespace RetroLauncher
                 }
                 SaveSelectedFields();
             };
-            cbDefaultConsole.SelectedIndexChanged += cbDefaultConsole_SelectedIndexChanged;
 
-            // Buttons
+            btnBrowse = new Button
+            {
+                Text = "...",
+                Size = new Size(38, 26),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(55, 65, 81),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(0)
+            };
+            btnBrowse.FlatAppearance.BorderSize = 0;
             btnBrowse.Click += btnBrowse_Click;
-            btnAdd.Click += btnAdd_Click;
-            btnRemove.Click += btnRemove_Click;
-            btnTestLaunch.Click += btnTestLaunch_Click;
-            btnSaveClose.Click += btnSaveClose_Click;
 
-            // Adjust Form size to give us more vertical room
-            this.ClientSize = new System.Drawing.Size(664, 465);
+            pnlPathBrowse.Controls.Add(tbPath, 0, 0);
+            pnlPathBrowse.Controls.Add(btnBrowse, 1, 0);
 
-            // Left ListBox sizing adjustments
-            lbEmulators.Height = 330;
-            btnAdd.Location = new Point(20, 365);
-            btnRemove.Location = new Point(135, 365);
+            tblDetailsGrid.Controls.Add(lblPath, 0, 1);
+            tblDetailsGrid.Controls.Add(pnlPathBrowse, 1, 1);
 
-            // Setup owner draw on ListBox
-            lbEmulators.DrawMode = DrawMode.OwnerDrawFixed;
-            lbEmulators.ItemHeight = 44;
-            lbEmulators.DrawItem += lbEmulators_DrawItem;
+            // Version
+            lblVersionHeader = new Label
+            {
+                Text = "Version Info:",
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(156, 163, 175),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 4, 6)
+            };
+            lblVersion = new Label
+            {
+                Text = "Unknown",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
+                ForeColor = Color.White,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 0, 6)
+            };
+            tblDetailsGrid.Controls.Add(lblVersionHeader, 0, 2);
+            tblDetailsGrid.Controls.Add(lblVersion, 1, 2);
 
-            // Reposition Right Panel fields
-            lblName.Location = new Point(260, 23);
-            tbName.Location = new Point(370, 20);
-            tbName.Width = 270;
-
-            lblPath.Location = new Point(260, 63);
-            tbPath.Location = new Point(370, 60);
-            tbPath.Width = 225;
-            btnBrowse.Location = new Point(600, 60);
-            btnBrowse.Width = 40;
-
-            lblVersionHeader.Location = new Point(260, 103);
-            lblVersionHeader.Text = "Version Info:";
-            lblVersion.Location = new Point(370, 103);
-            lblVersion.Width = 270;
-
-            // Initialize new controls programmatically
+            // BIOS Status & Sync
             lblBiosHeader = new Label
             {
                 Text = "BIOS/Firmware:",
-                Location = new Point(260, 138),
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(156, 163, 175),
-                AutoSize = true
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 4, 6)
             };
-            this.Controls.Add(lblBiosHeader);
+
+            var flpBios = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                WrapContents = true,
+                Margin = new Padding(0, 2, 0, 6)
+            };
 
             lblBiosStatusVal = new Label
             {
                 Text = "Checking...",
-                Location = new Point(370, 138),
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                 ForeColor = Color.White,
-                AutoSize = true
+                AutoSize = true,
+                Margin = new Padding(0, 4, 12, 0)
             };
-            this.Controls.Add(lblBiosStatusVal);
 
             btnSyncBios = new Button
             {
                 Text = "🔄 Sync BIOS",
-                Location = new Point(520, 132),
-                Size = new Size(120, 28),
+                Size = new Size(110, 28),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(79, 70, 229),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Margin = new Padding(0)
             };
             btnSyncBios.FlatAppearance.BorderSize = 0;
             btnSyncBios.Click += btnSyncBios_Click;
-            this.Controls.Add(btnSyncBios);
 
-            lblDefaultHeader.Location = new Point(260, 173);
-            lblDefaultHeader.Text = "Default For:";
-            lblDefaultHeader.Width = 100;
-            cbDefaultConsole.Location = new Point(370, 170);
-            cbDefaultConsole.Width = 270;
+            flpBios.Controls.Add(lblBiosStatusVal);
+            flpBios.Controls.Add(btnSyncBios);
 
-            // Channel selection controls
-            lblChannel = new Label
+            tblDetailsGrid.Controls.Add(lblBiosHeader, 0, 3);
+            tblDetailsGrid.Controls.Add(flpBios, 1, 3);
+
+            // Default Console
+            lblDefaultHeader = new Label
             {
-                Text = "Release Channel:",
-                Location = new Point(260, 208),
-                Size = new Size(105, 20),
+                Text = "Default For:",
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(156, 163, 175),
-                AutoSize = true
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 4, 6)
             };
-            this.Controls.Add(lblChannel);
-
-            cbChannel = new ComboBox
+            cbDefaultConsole = new ComboBox
             {
-                Location = new Point(370, 205),
-                Size = new Size(270, 25),
+                Dock = DockStyle.Top,
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.FromArgb(44, 44, 52),
-                ForeColor = Color.White
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9F),
+                Margin = new Padding(0, 4, 0, 6)
+            };
+            cbDefaultConsole.SelectedIndexChanged += cbDefaultConsole_SelectedIndexChanged;
+
+            tblDetailsGrid.Controls.Add(lblDefaultHeader, 0, 4);
+            tblDetailsGrid.Controls.Add(cbDefaultConsole, 1, 4);
+
+            // Channel
+            lblChannel = new Label
+            {
+                Text = "Release Channel:",
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(156, 163, 175),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 4, 6)
+            };
+            cbChannel = new ComboBox
+            {
+                Dock = DockStyle.Top,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(44, 44, 52),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9F),
+                Margin = new Padding(0, 4, 0, 6)
             };
             cbChannel.Items.Add("Stable");
             cbChannel.Items.Add("Nightly");
             cbChannel.SelectedIndexChanged += cbChannel_SelectedIndexChanged;
-            this.Controls.Add(cbChannel);
 
+            tblDetailsGrid.Controls.Add(lblChannel, 0, 5);
+            tblDetailsGrid.Controls.Add(cbChannel, 1, 5);
+
+            // Last Checked
             lblLastUpdateHeader = new Label
             {
                 Text = "Last Checked:",
-                Location = new Point(260, 243),
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(156, 163, 175),
-                AutoSize = true
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 4, 6)
             };
-            this.Controls.Add(lblLastUpdateHeader);
-
             lblLastUpdateVal = new Label
             {
                 Text = "Never",
-                Location = new Point(370, 243),
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
                 ForeColor = Color.White,
-                AutoSize = true
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 6, 0, 6)
             };
-            this.Controls.Add(lblLastUpdateVal);
+            tblDetailsGrid.Controls.Add(lblLastUpdateHeader, 0, 6);
+            tblDetailsGrid.Controls.Add(lblLastUpdateVal, 1, 6);
 
-            btnTestLaunch.Location = new Point(260, 280);
-            btnTestLaunch.Width = 380;
-            btnTestLaunch.Height = 35;
+            pnlRightMain.Controls.Add(tblDetailsGrid, 0, 0);
+
+            // --- Row 1: Actions Header ---
+            var lblActionsHeader = new Label
+            {
+                Text = "Installation & Maintenance",
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(229, 231, 235),
+                AutoSize = true,
+                Margin = new Padding(0, 10, 0, 4)
+            };
+            pnlRightMain.Controls.Add(lblActionsHeader, 0, 1);
+
+            // --- Row 2: Action Buttons FlowLayoutPanel ---
+            flpActionButtons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                WrapContents = true,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+
+            btnTestLaunch = new Button
+            {
+                Text = "🚀  Launch",
+                Size = new Size(115, 34),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(99, 102, 241),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
+            };
+            btnTestLaunch.FlatAppearance.BorderSize = 0;
+            btnTestLaunch.Click += btnTestLaunch_Click;
 
             btnInstall = new Button
             {
-                Text = "⬇️  INSTALL EMULATOR",
-                Location = new Point(260, 320),
-                Size = new Size(380, 35),
+                Text = "⬇️  Install",
+                Size = new Size(125, 34),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(16, 185, 129),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
             };
             btnInstall.FlatAppearance.BorderSize = 0;
-            btnInstall.Click += async (s, e) => await ExecuteOperationAsync(EmulatorInstallationOperation.Install);
-            this.Controls.Add(btnInstall);
+            btnInstall.Click += async (s, e) => {
+                if (btnInstall.Text.Contains("Update"))
+                    await ExecuteOperationAsync(EmulatorInstallationOperation.Update);
+                else if (btnInstall.Text.Contains("Reinstall"))
+                    await ExecuteOperationAsync(EmulatorInstallationOperation.Reinstall);
+                else
+                    await ExecuteOperationAsync(EmulatorInstallationOperation.Install);
+            };
 
             btnReinstall = new Button
             {
-                Text = "🔄 Reinstall",
-                Location = new Point(260, 320),
-                Size = new Size(120, 35),
+                Text = "🔄  Reinstall",
+                Size = new Size(115, 34),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(99, 102, 241),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
             };
             btnReinstall.FlatAppearance.BorderSize = 0;
             btnReinstall.Click += async (s, e) => await ExecuteOperationAsync(EmulatorInstallationOperation.Reinstall);
-            this.Controls.Add(btnReinstall);
 
             btnRepair = new Button
             {
-                Text = "🛠️ Repair",
-                Location = new Point(390, 320),
-                Size = new Size(120, 35),
+                Text = "🛠️  Repair",
+                Size = new Size(105, 34),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(79, 70, 229),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
             };
             btnRepair.FlatAppearance.BorderSize = 0;
             btnRepair.Click += async (s, e) => await ExecuteOperationAsync(EmulatorInstallationOperation.Repair);
-            this.Controls.Add(btnRepair);
 
             btnUpdate = new Button
             {
-                Text = "⬆️ Update",
-                Location = new Point(520, 320),
-                Size = new Size(120, 35),
+                Text = "⬆️  Update",
+                Size = new Size(105, 34),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(245, 158, 11),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
             };
             btnUpdate.FlatAppearance.BorderSize = 0;
             btnUpdate.Click += async (s, e) => await ExecuteOperationAsync(EmulatorInstallationOperation.Update);
-            this.Controls.Add(btnUpdate);
-
-            pbProgress.Location = new Point(260, 368);
-            pbProgress.Width = 300;
-            pbProgress.Height = 15;
-
-            btnCancel = new Button
-            {
-                Text = "Cancel",
-                Location = new Point(570, 363),
-                Size = new Size(70, 25),
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(107, 114, 128),
-                Visible = false
-            };
-            btnCancel.FlatAppearance.BorderSize = 0;
-            btnCancel.Click += btnCancel_Click;
-            this.Controls.Add(btnCancel);
-
-            btnSyncAllBios = new Button
-            {
-                Text = "🔄 Sync BIOS",
-                Location = new Point(105, 415),
-                Size = new Size(105, 35),
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(16, 185, 129),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
-            };
-            btnSyncAllBios.FlatAppearance.BorderSize = 0;
-            btnSyncAllBios.Click += btnSyncAllBios_Click;
-            this.Controls.Add(btnSyncAllBios);
-
-            btnSyncAllControllers = new Button
-            {
-                Text = "🎮 Sync Controllers",
-                Location = new Point(215, 415),
-                Size = new Size(130, 35),
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(99, 102, 241),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
-            };
-            btnSyncAllControllers.FlatAppearance.BorderSize = 0;
-            btnSyncAllControllers.Click += btnSyncAllControllers_Click;
-            this.Controls.Add(btnSyncAllControllers);
 
             btnUninstall = new Button
             {
-                Text = "🗑️ Uninstall",
-                Location = new Point(350, 415),
-                Size = new Size(85, 35),
+                Text = "🗑️  Uninstall",
+                Size = new Size(115, 34),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(239, 68, 68),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
             };
             btnUninstall.FlatAppearance.BorderSize = 0;
             btnUninstall.Click += btnUninstall_Click;
-            this.Controls.Add(btnUninstall);
 
-            btnOpenFolder = new Button
+            btnDuckStationApi = new Button
             {
-                Text = "📂 Folder",
-                Location = new Point(440, 415),
-                Size = new Size(85, 35),
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(107, 114, 128),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
-            };
-            btnOpenFolder.FlatAppearance.BorderSize = 0;
-            btnOpenFolder.Click += btnOpenFolder_Click;
-            this.Controls.Add(btnOpenFolder);
-
-            Button btnHealthCheck = new Button
-            {
-                Text = "🔍 Health",
-                Location = new Point(20, 415),
-                Size = new Size(80, 35),
+                Text = "🔌 DuckStation API",
+                Size = new Size(150, 34),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(79, 70, 229),
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6),
+                Visible = false
             };
-            btnHealthCheck.FlatAppearance.BorderSize = 0;
-            btnHealthCheck.Click += btnHealthCheck_Click;
-            this.Controls.Add(btnHealthCheck);
+            btnDuckStationApi.FlatAppearance.BorderSize = 0;
+            btnDuckStationApi.Click += async (s, e) => {
+                try
+                {
+                    var apiClient = new ApiClient();
+                    var info = await apiClient.GetDuckStationPackageAsync("https://api.github.com/repos/stenzek/duckstation/releases/latest");
+                    if (info != null)
+                    {
+                        MessageBox.Show($"DuckStation API Info:\nVersion: {info.Version}\nURL: {info.DownloadUrl}", "DuckStation API", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"DuckStation API check failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
 
-            btnSaveClose.Location = new Point(530, 415);
-            btnSaveClose.Size = new Size(110, 35);
+            flpActionButtons.Controls.Add(btnTestLaunch);
+            flpActionButtons.Controls.Add(btnInstall);
+            flpActionButtons.Controls.Add(btnReinstall);
+            flpActionButtons.Controls.Add(btnRepair);
+            flpActionButtons.Controls.Add(btnUpdate);
+            flpActionButtons.Controls.Add(btnUninstall);
+            flpActionButtons.Controls.Add(btnDuckStationApi);
 
-            // Controller Profile Section Controls
+            pnlRightMain.Controls.Add(flpActionButtons, 0, 2);
+
+            // --- Row 3: Controller Header ---
+            var lblControllerHeader = new Label
+            {
+                Text = "Controller Profile & Sync",
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(229, 231, 235),
+                AutoSize = true,
+                Margin = new Padding(0, 10, 0, 4)
+            };
+            pnlRightMain.Controls.Add(lblControllerHeader, 0, 3);
+
+            // --- Row 4: Controller Buttons FlowLayoutPanel ---
+            flpControllerButtons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                WrapContents = true,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+
             btnApplyControllerProfile = new Button
             {
-                Text = "🎮 Apply Controller Profile",
-                Location = new Point(260, 345),
-                Size = new Size(160, 28),
+                Text = "🎮 Apply Global Profile",
+                Size = new Size(160, 30),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(99, 102, 241),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
             };
             btnApplyControllerProfile.FlatAppearance.BorderSize = 0;
             btnApplyControllerProfile.Click += btnApplyControllerProfile_Click;
-            this.Controls.Add(btnApplyControllerProfile);
 
             btnImportControllerSettings = new Button
             {
                 Text = "📥 Import",
-                Location = new Point(425, 345),
-                Size = new Size(100, 28),
+                Size = new Size(90, 30),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(55, 65, 81),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
             };
             btnImportControllerSettings.FlatAppearance.BorderSize = 0;
             btnImportControllerSettings.Click += btnImportControllerSettings_Click;
-            this.Controls.Add(btnImportControllerSettings);
 
             btnExportControllerSettings = new Button
             {
                 Text = "📤 Export",
-                Location = new Point(530, 345),
-                Size = new Size(110, 28),
+                Size = new Size(90, 30),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(55, 65, 81),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Margin = new Padding(0, 0, 6, 6)
             };
             btnExportControllerSettings.FlatAppearance.BorderSize = 0;
             btnExportControllerSettings.Click += btnExportControllerSettings_Click;
-            this.Controls.Add(btnExportControllerSettings);
 
             chkAutoSyncController = new CheckBox
             {
                 Text = "Auto Sync Controller on Launch",
-                Location = new Point(260, 380),
-                Size = new Size(240, 22),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Regular),
-                ForeColor = Color.FromArgb(209, 213, 219)
+                Font = new Font("Segoe UI", 8.5F),
+                ForeColor = Color.FromArgb(209, 213, 219),
+                AutoSize = true,
+                Margin = new Padding(0, 4, 0, 6)
             };
             chkAutoSyncController.CheckedChanged += chkAutoSyncController_CheckedChanged;
-            this.Controls.Add(chkAutoSyncController);
+
+            flpControllerButtons.Controls.Add(btnApplyControllerProfile);
+            flpControllerButtons.Controls.Add(btnImportControllerSettings);
+            flpControllerButtons.Controls.Add(btnExportControllerSettings);
+            flpControllerButtons.Controls.Add(chkAutoSyncController);
+
+            pnlRightMain.Controls.Add(flpControllerButtons, 0, 4);
+
+            // --- Row 5: Dedicated Progress TableLayoutPanel ---
+            pnlProgress = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 3,
+                RowCount = 2,
+                Margin = new Padding(0, 6, 0, 10),
+                Visible = false
+            };
+            pnlProgress.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlProgress.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            pnlProgress.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            pbProgress = new ProgressBar
+            {
+                Dock = DockStyle.Top,
+                Height = 18,
+                Margin = new Padding(0, 0, 8, 4)
+            };
+
+            btnCancel = new Button
+            {
+                Text = "Cancel",
+                Size = new Size(70, 26),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(107, 114, 128),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                Margin = new Padding(0)
+            };
+            btnCancel.FlatAppearance.BorderSize = 0;
+            btnCancel.Click += btnCancel_Click;
+
+            lblStatus = new Label
+            {
+                Text = "Ready",
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Italic),
+                ForeColor = Color.FromArgb(156, 163, 175),
+                AutoSize = true,
+                Margin = new Padding(0, 2, 0, 0)
+            };
+
+            pnlProgress.Controls.Add(pbProgress, 0, 0);
+            pnlProgress.SetColumnSpan(pbProgress, 2);
+            pnlProgress.Controls.Add(btnCancel, 2, 0);
+            pnlProgress.Controls.Add(lblStatus, 0, 1);
+            pnlProgress.SetColumnSpan(lblStatus, 3);
+
+            pnlRightMain.Controls.Add(pnlProgress, 0, 5);
+
+            // --- Row 7: Footer Bar ---
+            flpFooterButtons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                FlowDirection = FlowDirection.RightToLeft,
+                AutoSize = true,
+                Margin = new Padding(0, 12, 0, 0)
+            };
+
+            btnSaveClose = new Button
+            {
+                Text = "💾 Save & Close",
+                Size = new Size(125, 36),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(16, 185, 129),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(6, 0, 0, 0)
+            };
+            btnSaveClose.FlatAppearance.BorderSize = 0;
+            btnSaveClose.Click += btnSaveClose_Click;
+
+            btnOpenFolder = new Button
+            {
+                Text = "📂 Folder",
+                Size = new Size(95, 36),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(107, 114, 128),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Margin = new Padding(0)
+            };
+            btnOpenFolder.FlatAppearance.BorderSize = 0;
+            btnOpenFolder.Click += btnOpenFolder_Click;
+
+            flpFooterButtons.Controls.Add(btnSaveClose);
+            flpFooterButtons.Controls.Add(btnOpenFolder);
+
+            pnlRightMain.Controls.Add(flpFooterButtons, 0, 7);
+
+            splitContainer.Panel2.Controls.Add(pnlRightMain);
 
             // Hover styles
             SetupHover(btnSaveClose, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
@@ -419,6 +800,7 @@ namespace RetroLauncher
             SetupHover(btnImportControllerSettings, Color.FromArgb(55, 65, 81), Color.FromArgb(31, 41, 55));
             SetupHover(btnExportControllerSettings, Color.FromArgb(55, 65, 81), Color.FromArgb(31, 41, 55));
             SetupHover(btnSyncAllControllers, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
+            SetupHover(btnDuckStationApi, Color.FromArgb(79, 70, 229), Color.FromArgb(67, 56, 202));
         }
 
         private void SetupHover(Button btn, Color baseColor, Color hoverColor)
@@ -849,11 +1231,17 @@ namespace RetroLauncher
             if (biosStatus == "Present" || biosStatus == "Not Required")
             {
                 lblBiosStatusVal.ForeColor = Color.FromArgb(16, 185, 129); // Green
+                btnSyncBios.Visible = (biosStatus == "Present");
             }
             else
             {
                 lblBiosStatusVal.ForeColor = Color.FromArgb(245, 158, 11); // Yellow/Orange
+                btnSyncBios.Visible = true;
             }
+
+            // Emulator-specific buttons (Requirement 8)
+            bool isDuckStation = string.Equals(emu.Id, "duckstation", StringComparison.OrdinalIgnoreCase);
+            btnDuckStationApi.Visible = isDuckStation;
 
             // Last Update Check
             lblLastUpdateVal.Text = _lastUpdateCheck == DateTime.MinValue ? "Never" : _lastUpdateCheck.ToString("g");
@@ -870,6 +1258,7 @@ namespace RetroLauncher
 
             if (_isInstalling)
             {
+                btnInstall.Text = "⏳  Installing...";
                 btnInstall.Enabled = false;
                 btnReinstall.Enabled = false;
                 btnRepair.Enabled = false;
@@ -878,41 +1267,35 @@ namespace RetroLauncher
                 btnTestLaunch.Enabled = false;
                 btnBrowse.Enabled = false;
                 btnOpenFolder.Enabled = false;
+
+                pnlProgress.Visible = true;
                 btnCancel.Visible = true;
-                pbProgress.Visible = true;
                 return;
             }
 
+            pnlProgress.Visible = false;
             btnCancel.Visible = false;
             btnBrowse.Enabled = true;
 
             if (!isInstalled)
             {
-                // NOT INSTALLED: Show Install button only. Hide Launch, Reinstall, Repair, Update, Uninstall.
-                btnTestLaunch.Visible = false;
+                // NOT INSTALLED: Show Install button dynamically ("⬇️  Install")
+                btnInstall.Text = "⬇️  Install";
                 btnInstall.Visible = true;
                 btnInstall.Enabled = true;
 
+                btnTestLaunch.Visible = false;
                 btnReinstall.Visible = false;
-                btnReinstall.Enabled = false;
-
                 btnRepair.Visible = false;
-                btnRepair.Enabled = false;
-
                 btnUpdate.Visible = false;
-                btnUpdate.Enabled = false;
-
-                btnUninstall.Enabled = false;
+                btnUninstall.Visible = false;
                 btnOpenFolder.Enabled = false;
             }
             else
             {
-                // INSTALLED: Show Launch, Repair, Reinstall, Uninstall. Show Update ONLY if newer release exists.
+                // INSTALLED: Show Launch, Repair, Reinstall, Uninstall.
                 btnTestLaunch.Visible = true;
                 btnTestLaunch.Enabled = true;
-
-                btnInstall.Visible = false;
-                btnInstall.Enabled = false;
 
                 btnReinstall.Visible = true;
                 btnReinstall.Enabled = true;
@@ -920,11 +1303,26 @@ namespace RetroLauncher
                 btnRepair.Visible = true;
                 btnRepair.Enabled = true;
 
+                btnUninstall.Visible = true;
                 btnUninstall.Enabled = true;
+
                 btnOpenFolder.Enabled = true;
 
-                btnUpdate.Visible = isUpdateAvailable;
-                btnUpdate.Enabled = isUpdateAvailable;
+                if (isUpdateAvailable)
+                {
+                    btnInstall.Text = "⬆️  Update";
+                    btnInstall.Visible = true;
+                    btnInstall.Enabled = true;
+                    btnUpdate.Visible = true;
+                    btnUpdate.Enabled = true;
+                }
+                else
+                {
+                    btnInstall.Text = "✅  Installed";
+                    btnInstall.Visible = true;
+                    btnInstall.Enabled = false;
+                    btnUpdate.Visible = false;
+                }
             }
         }
 

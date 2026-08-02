@@ -8,6 +8,7 @@ static class Program
     [STAThread]
     static void Main()
     {
+        ApplicationConfiguration.Initialize();
 #if DEBUG
         ReleaseAssetSelectorTests.RunTests();
         ArchiveExtractorTests.RunTestsAsync().GetAwaiter().GetResult();
@@ -18,10 +19,8 @@ static class Program
         BiosSynchronizationServiceTests.RunTests();
         ControllerSyncServiceTests.RunTests();
         EmulatorInstallationActionTests.RunTests();
+        EmulatorManagerLayoutTests.RunTests();
 #endif
-        // To customize application configuration such as set high DPI settings or default font,
-        // see https://aka.ms/applicationconfiguration.
-        ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
     }    
 }
