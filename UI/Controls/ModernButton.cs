@@ -77,7 +77,22 @@ namespace RetroLauncher.UI.Controls
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-            Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            int shadowOffset = _isPressed ? 1 : 2;
+            Rectangle shadowRect = new Rectangle(0, shadowOffset, Width - 1, Height - 1 - shadowOffset);
+            Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1 - (shadowOffset > 1 ? 2 : 1));
+
+            // 1. Soft Shadow
+            if (Enabled)
+            {
+                int shadowAlpha = _isPressed ? 12 : (_isHovered ? 45 : 25);
+                using (GraphicsPath shadowPath = GetRoundedPath(shadowRect, _cornerRadius))
+                using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(shadowAlpha, 0, 0, 0)))
+                {
+                    g.FillPath(shadowBrush, shadowPath);
+                }
+            }
+
+            // 2. Button Fill
             using GraphicsPath path = GetRoundedPath(rect, _cornerRadius);
 
             Color fillBg = _isPrimary
@@ -94,17 +109,27 @@ namespace RetroLauncher.UI.Controls
                 g.FillPath(brush, path);
             }
 
+            // 3. Subtle Border
             Color borderColor = _isHovered ? AppTheme.Current.Colors.BorderHover : AppTheme.Current.Colors.Border;
             using (Pen pen = new Pen(borderColor, 1F))
             {
                 g.DrawPath(pen, path);
             }
 
-            Color textColor = Enabled ? AppTheme.Current.Colors.TextPrimary : AppTheme.Current.Colors.TextDisabled;
-            TextRenderer.DrawText(g, Text, Font, rect, textColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            // 4. Text & Content with 1px Pressed Offset
+            if (!string.IsNullOrEmpty(Text))
+            {
+                Color textColor = Enabled ? (this.ForeColor) : AppTheme.Current.Colors.TextMuted;
+                Rectangle textRect = rect;
+                if (_isPressed)
+                {
+                    textRect.Offset(1, 1);
+                }
+                TextRenderer.DrawText(g, Text, Font, textRect, textColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
+            }
         }
 
-        private static GraphicsPath GetRoundedPath(Rectangle rect, int radius)
+        private GraphicsPath GetRoundedPath(Rectangle rect, int radius)
         {
             GraphicsPath path = new GraphicsPath();
             if (radius <= 0)
@@ -112,15 +137,11 @@ namespace RetroLauncher.UI.Controls
                 path.AddRectangle(rect);
                 return path;
             }
-            int diameter = radius * 2;
-            Rectangle arc = new Rectangle(rect.X, rect.Y, diameter, diameter);
-            path.AddArc(arc, 180, 90);
-            arc.X = rect.Right - diameter;
-            path.AddArc(arc, 270, 90);
-            arc.Y = rect.Bottom - diameter;
-            path.AddArc(arc, 0, 90);
-            arc.X = rect.X;
-            path.AddArc(arc, 90, 90);
+            int d = Math.Min(radius * 2, Math.Min(rect.Width, rect.Height));
+            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+            path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+            path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
             path.CloseFigure();
             return path;
         }

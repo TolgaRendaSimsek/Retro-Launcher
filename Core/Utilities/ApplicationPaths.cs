@@ -56,7 +56,20 @@ namespace RetroLauncher.Core.Utilities
             }
 
             string normalized = relativeOrFullPath.Replace('\\', '/').TrimStart('/');
-            return Path.GetFullPath(Path.Combine(BaseDataDir, normalized));
+            string appDataPath = Path.GetFullPath(Path.Combine(BaseDataDir, normalized));
+
+            if (File.Exists(appDataPath) || Directory.Exists(appDataPath))
+            {
+                return appDataPath;
+            }
+
+            string baseDirCandidate = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, normalized));
+            if (File.Exists(baseDirCandidate) || Directory.Exists(baseDirCandidate))
+            {
+                return baseDirCandidate;
+            }
+
+            return appDataPath;
         }
     }
 }

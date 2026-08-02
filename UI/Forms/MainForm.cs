@@ -548,7 +548,7 @@ namespace RetroLauncher.UI.Forms
             {
                 Dock = DockStyle.Fill,
                 Margin = new Padding(0),
-                Padding = new Padding(0)
+                Padding = new Padding(24, 16, 24, 24)
             };
             foreach (Control ctrl in this.Controls.Cast<Control>().ToList())
             {
@@ -598,7 +598,7 @@ namespace RetroLauncher.UI.Forms
                 ColumnCount = 1,
                 RowCount = 10,
                 Margin = new Padding(0),
-                Padding = new Padding(6),
+                Padding = new Padding(4),
                 BackColor = AppTheme.Current.Colors.SidebarBackground
             };
             pnlSidebarNav.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -611,35 +611,35 @@ namespace RetroLauncher.UI.Forms
                 Dock = DockStyle.Top,
                 Height = 44,
                 TextAlign = ContentAlignment.MiddleCenter,
-                Margin = new Padding(0, 4, 0, 12)
+                Margin = new Padding(4, 4, 4, 12)
             };
             pnlSidebarNav.Controls.Add(lblLogoHeader, 0, 0);
 
-            _navHome = new NavigationItem { Icon = "🏠", Title = "Home", TargetPage = "Home", IsSelected = true };
+            _navHome = new NavigationItem { Icon = "🏠", Title = "Home", TargetPage = "Home", IsSelected = true, Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2) };
             _navHome.SetToolTip("Go to Home Dashboard");
             _navHome.Click += (s, e) => SwitchPage(_navHome, "Home");
 
-            _navLibrary = new NavigationItem { Icon = "📚", Title = "Library", TargetPage = "Library" };
+            _navLibrary = new NavigationItem { Icon = "📚", Title = "Library", TargetPage = "Library", Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2) };
             _navLibrary.SetToolTip("Browse Game Library");
             _navLibrary.Click += (s, e) => SwitchPage(_navLibrary, "Library");
 
-            _navEmulators = new NavigationItem { Icon = "🎮", Title = "Emulators", TargetPage = "Emulators" };
+            _navEmulators = new NavigationItem { Icon = "🎮", Title = "Emulators", TargetPage = "Emulators", Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2) };
             _navEmulators.SetToolTip("Manage Installed Emulators");
             _navEmulators.Click += (s, e) => SwitchPage(_navEmulators, "Emulators");
 
-            _navControllers = new NavigationItem { Icon = "🕹️", Title = "Controllers", TargetPage = "Controllers" };
+            _navControllers = new NavigationItem { Icon = "🕹️", Title = "Controllers", TargetPage = "Controllers", Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2) };
             _navControllers.SetToolTip("Configure Controllers & Profiles");
             _navControllers.Click += (s, e) => SwitchPage(_navControllers, "Controllers");
 
-            _navBios = new NavigationItem { Icon = "🔄", Title = "BIOS Manager", TargetPage = "BIOS" };
+            _navBios = new NavigationItem { Icon = "🔄", Title = "BIOS Manager", TargetPage = "BIOS", Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2) };
             _navBios.SetToolTip("Manage System Firmware & BIOS");
             _navBios.Click += (s, e) => SwitchPage(_navBios, "BIOS");
 
-            _navDownloads = new NavigationItem { Icon = "📦", Title = "Downloads", TargetPage = "Downloads" };
+            _navDownloads = new NavigationItem { Icon = "📦", Title = "Downloads", TargetPage = "Downloads", Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2) };
             _navDownloads.SetToolTip("Package Management & Downloads");
             _navDownloads.Click += (s, e) => SwitchPage(_navDownloads, "Downloads");
 
-            _navSettings = new NavigationItem { Icon = "⚙️", Title = "Settings", TargetPage = "Settings" };
+            _navSettings = new NavigationItem { Icon = "⚙️", Title = "Settings", TargetPage = "Settings", Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2) };
             _navSettings.SetToolTip("Launcher Appearance & Settings");
             _navSettings.Click += (s, e) => SwitchPage(_navSettings, "Settings");
 
@@ -654,21 +654,19 @@ namespace RetroLauncher.UI.Forms
             pnlSidebarNav.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) }, 0, 8);
             pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            var btnCollapse = new ModernButton { Text = "◀ Collapse", Size = new Size(198, 32), IsPrimary = false };
+            var btnCollapse = new ModernButton { Text = "◀ Collapse", Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2), Height = 34, IsPrimary = false };
             btnCollapse.Click += (s, e) =>
             {
                 if (_tblRootLayout.ColumnStyles[0].Width == 210F)
                 {
                     _tblRootLayout.ColumnStyles[0].Width = 60F;
                     btnCollapse.Text = "▶";
-                    btnCollapse.Width = 48;
                     lblLogoHeader.Text = "🚀";
                 }
                 else
                 {
                     _tblRootLayout.ColumnStyles[0].Width = 210F;
                     btnCollapse.Text = "◀ Collapse";
-                    btnCollapse.Width = 198;
                     lblLogoHeader.Text = "🚀 RETRO LAUNCHER";
                 }
             };
@@ -707,14 +705,15 @@ namespace RetroLauncher.UI.Forms
             var tblTopHeaderContent = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 3,
+                ColumnCount = 4,
                 RowCount = 1,
                 Margin = new Padding(0),
-                Padding = new Padding(12, 8, 12, 8),
+                Padding = new Padding(24, 8, 24, 8),
                 BackColor = AppTheme.Current.Colors.TopBarBackground
             };
             tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             _lblHeaderPageTitle = new Label
@@ -728,7 +727,17 @@ namespace RetroLauncher.UI.Forms
             };
             tblTopHeaderContent.Controls.Add(_lblHeaderPageTitle, 0, 0);
 
-            var searchBoxTop = new SearchBox { PlaceholderText = "Search games, platforms, emulators...", Width = 320, Anchor = AnchorStyles.Right };
+            tblTopHeaderContent.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) }, 1, 0);
+
+            var searchBoxTop = new SearchBox
+            {
+                PlaceholderText = "Search games, platforms, emulators...",
+                Width = 320,
+                MinimumSize = new Size(220, 34),
+                MaximumSize = new Size(380, 34),
+                Anchor = AnchorStyles.Right,
+                Margin = new Padding(0, 0, 12, 0)
+            };
             searchBoxTop.SearchTextChanged += (s, e) =>
             {
                 tbSearch.Text = searchBoxTop.SearchText;
@@ -737,11 +746,18 @@ namespace RetroLauncher.UI.Forms
                     SwitchPage(_navLibrary, "Library");
                 }
             };
-            tblTopHeaderContent.Controls.Add(searchBoxTop, 1, 0);
+            tblTopHeaderContent.Controls.Add(searchBoxTop, 2, 0);
 
-            var btnNotification = new ModernButton { Text = "🔔 Notifications", Size = new Size(120, 32), IsPrimary = false, Anchor = AnchorStyles.Right, Margin = new Padding(8, 0, 0, 0) };
+            var btnNotification = new ModernButton
+            {
+                Text = "🔔 Notifications",
+                Size = new Size(130, 34),
+                IsPrimary = false,
+                Anchor = AnchorStyles.Right,
+                Margin = new Padding(0)
+            };
             btnNotification.Click += (s, e) => ToastNotification.ShowToast(this, "No new notifications", StatusType.Info);
-            tblTopHeaderContent.Controls.Add(btnNotification, 2, 0);
+            tblTopHeaderContent.Controls.Add(btnNotification, 3, 0);
 
             _pnlTopBarPanel.Controls.Add(tblTopHeaderContent);
             _tblRightLayout.Controls.Add(_pnlTopBarPanel, 0, 0);

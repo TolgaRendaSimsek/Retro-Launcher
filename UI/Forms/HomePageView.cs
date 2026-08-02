@@ -22,7 +22,7 @@ namespace RetroLauncher.UI.Forms
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
             Dock = DockStyle.Fill;
             AutoScroll = true;
-            Padding = new Padding(20);
+            Padding = new Padding(24, 20, 24, 20);
             BackColor = AppTheme.Current.Colors.Background;
 
             BuildLayout();
