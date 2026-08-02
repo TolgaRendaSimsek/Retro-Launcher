@@ -513,6 +513,10 @@ namespace RetroLauncher.UI.Forms
             }
         }
 
+        private TableLayoutPanel _tblRootLayout = null!;
+        private TableLayoutPanel _tblRightLayout = null!;
+        private Panel _pnlSidebarPanel = null!;
+        private Panel _pnlTopBarPanel = null!;
         private Panel _pnlContentHost = null!;
         private Label _lblHeaderPageTitle = null!;
         private NavigationItem _navHome = null!;
@@ -540,7 +544,12 @@ namespace RetroLauncher.UI.Forms
             this.ForeColor = AppTheme.Current.Colors.TextPrimary;
 
             // Preserve existing library panel view
-            _pnlLibraryView = new Panel { Dock = DockStyle.Fill };
+            _pnlLibraryView = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
             foreach (Control ctrl in this.Controls.Cast<Control>().ToList())
             {
                 if (ctrl != msMain)
@@ -550,13 +559,45 @@ namespace RetroLauncher.UI.Forms
                 }
             }
 
-            // Left Navigation Sidebar
+            this.Controls.Clear();
+            if (msMain != null)
+            {
+                this.Controls.Add(msMain);
+            }
+
+            // -----------------------------------------------------------------
+            // 1. RootLayout (TableLayoutPanel: 2 Columns [Absolute 210, Percent 100], 1 Row [Percent 100])
+            // -----------------------------------------------------------------
+            _tblRootLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                ColumnCount = 2,
+                RowCount = 1,
+                BackColor = AppTheme.Current.Colors.Background
+            };
+            _tblRootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210F));
+            _tblRootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _tblRootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            // -----------------------------------------------------------------
+            // 2. SidebarPanel (Column 0, Row 0)
+            // -----------------------------------------------------------------
+            _pnlSidebarPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = AppTheme.Current.Colors.SidebarBackground
+            };
+
             var pnlSidebarNav = new TableLayoutPanel
             {
-                Dock = DockStyle.Left,
-                Width = 210,
+                Dock = DockStyle.Fill,
                 ColumnCount = 1,
                 RowCount = 10,
+                Margin = new Padding(0),
                 Padding = new Padding(6),
                 BackColor = AppTheme.Current.Colors.SidebarBackground
             };
@@ -610,43 +651,71 @@ namespace RetroLauncher.UI.Forms
             pnlSidebarNav.Controls.Add(_navDownloads, 0, 6);
             pnlSidebarNav.Controls.Add(_navSettings, 0, 7);
 
-            pnlSidebarNav.Controls.Add(new Panel { Dock = DockStyle.Fill }, 0, 8);
+            pnlSidebarNav.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) }, 0, 8);
             pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             var btnCollapse = new ModernButton { Text = "◀ Collapse", Size = new Size(198, 32), IsPrimary = false };
             btnCollapse.Click += (s, e) =>
             {
-                if (pnlSidebarNav.Width == 210)
+                if (_tblRootLayout.ColumnStyles[0].Width == 210F)
                 {
-                    pnlSidebarNav.Width = 60;
+                    _tblRootLayout.ColumnStyles[0].Width = 60F;
                     btnCollapse.Text = "▶";
+                    btnCollapse.Width = 48;
                     lblLogoHeader.Text = "🚀";
                 }
                 else
                 {
-                    pnlSidebarNav.Width = 210;
+                    _tblRootLayout.ColumnStyles[0].Width = 210F;
                     btnCollapse.Text = "◀ Collapse";
+                    btnCollapse.Width = 198;
                     lblLogoHeader.Text = "🚀 RETRO LAUNCHER";
                 }
             };
             pnlSidebarNav.Controls.Add(btnCollapse, 0, 9);
 
-            this.Controls.Add(pnlSidebarNav);
+            _pnlSidebarPanel.Controls.Add(pnlSidebarNav);
+            _tblRootLayout.Controls.Add(_pnlSidebarPanel, 0, 0);
 
-            // Top Header Bar
-            var pnlTopHeader = new TableLayoutPanel
+            // -----------------------------------------------------------------
+            // 3. RightLayout (TableLayoutPanel: 1 Column [Percent 100], 2 Rows [Absolute 50, Percent 100])
+            // -----------------------------------------------------------------
+            _tblRightLayout = new TableLayoutPanel
             {
-                Dock = DockStyle.Top,
-                Height = 50,
-                ColumnCount = 4,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                ColumnCount = 1,
+                RowCount = 2,
+                BackColor = AppTheme.Current.Colors.Background
+            };
+            _tblRightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _tblRightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F));
+            _tblRightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            // -----------------------------------------------------------------
+            // 4. TopBarPanel (Row 0 of RightLayout)
+            // -----------------------------------------------------------------
+            _pnlTopBarPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = AppTheme.Current.Colors.TopBarBackground
+            };
+
+            var tblTopHeaderContent = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
                 RowCount = 1,
+                Margin = new Padding(0),
                 Padding = new Padding(12, 8, 12, 8),
                 BackColor = AppTheme.Current.Colors.TopBarBackground
             };
-            pnlTopHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            pnlTopHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            pnlTopHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            pnlTopHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             _lblHeaderPageTitle = new Label
             {
@@ -657,7 +726,7 @@ namespace RetroLauncher.UI.Forms
                 Anchor = AnchorStyles.Left,
                 Margin = new Padding(0, 0, 20, 0)
             };
-            pnlTopHeader.Controls.Add(_lblHeaderPageTitle, 0, 0);
+            tblTopHeaderContent.Controls.Add(_lblHeaderPageTitle, 0, 0);
 
             var searchBoxTop = new SearchBox { PlaceholderText = "Search games, platforms, emulators...", Width = 320, Anchor = AnchorStyles.Right };
             searchBoxTop.SearchTextChanged += (s, e) =>
@@ -668,21 +737,32 @@ namespace RetroLauncher.UI.Forms
                     SwitchPage(_navLibrary, "Library");
                 }
             };
-            pnlTopHeader.Controls.Add(searchBoxTop, 1, 0);
+            tblTopHeaderContent.Controls.Add(searchBoxTop, 1, 0);
 
             var btnNotification = new ModernButton { Text = "🔔 Notifications", Size = new Size(120, 32), IsPrimary = false, Anchor = AnchorStyles.Right, Margin = new Padding(8, 0, 0, 0) };
             btnNotification.Click += (s, e) => ToastNotification.ShowToast(this, "No new notifications", StatusType.Info);
-            pnlTopHeader.Controls.Add(btnNotification, 2, 0);
+            tblTopHeaderContent.Controls.Add(btnNotification, 2, 0);
 
-            this.Controls.Add(pnlTopHeader);
+            _pnlTopBarPanel.Controls.Add(tblTopHeaderContent);
+            _tblRightLayout.Controls.Add(_pnlTopBarPanel, 0, 0);
 
-            // Main Content Host Region
+            // -----------------------------------------------------------------
+            // 5. ContentHostPanel (Row 1 of RightLayout)
+            // -----------------------------------------------------------------
             _pnlContentHost = new Panel
             {
                 Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                AutoScroll = true,
+                AutoSize = false,
                 BackColor = AppTheme.Current.Colors.Background
             };
-            this.Controls.Add(_pnlContentHost);
+            _tblRightLayout.Controls.Add(_pnlContentHost, 0, 1);
+
+            _tblRootLayout.Controls.Add(_tblRightLayout, 1, 0);
+
+            this.Controls.Add(_tblRootLayout);
 
             // Home Page Initialization
             _homePageView = new HomePageView();
@@ -712,47 +792,60 @@ namespace RetroLauncher.UI.Forms
 
             navItem.IsSelected = true;
             _lblHeaderPageTitle.Text = pageName;
+
+            _pnlContentHost.SuspendLayout();
             _pnlContentHost.Controls.Clear();
+
+            Control? pageControl = null;
 
             switch (pageName)
             {
                 case "Home":
                     _homePageView ??= new HomePageView();
-                    _pnlContentHost.Controls.Add(_homePageView);
+                    pageControl = _homePageView;
                     break;
                 case "Library":
-                    if (_pnlLibraryView != null)
-                        _pnlContentHost.Controls.Add(_pnlLibraryView);
+                    pageControl = _pnlLibraryView;
                     break;
                 case "Emulators":
-                    EmbedForm(ref _embeddedEmuForm, () => new EmulatorManagerForm());
+                    pageControl = GetEmbeddedForm(ref _embeddedEmuForm, () => new EmulatorManagerForm());
                     break;
                 case "Controllers":
-                    EmbedForm(ref _embeddedCtrlForm, () => new ControllerManagerForm());
+                    pageControl = GetEmbeddedForm(ref _embeddedCtrlForm, () => new ControllerManagerForm());
                     break;
                 case "BIOS":
-                    EmbedForm(ref _embeddedBiosForm, () => new BiosManagerForm());
+                    pageControl = GetEmbeddedForm(ref _embeddedBiosForm, () => new BiosManagerForm());
                     break;
                 case "Downloads":
-                    EmbedForm(ref _embeddedPkgForm, () => new PackageManagerForm());
+                    pageControl = GetEmbeddedForm(ref _embeddedPkgForm, () => new PackageManagerForm());
                     break;
                 case "Settings":
-                    EmbedForm(ref _embeddedSettingsForm, () => new AppearanceSettingsForm());
+                    pageControl = GetEmbeddedForm(ref _embeddedSettingsForm, () => new AppearanceSettingsForm());
                     break;
             }
+
+            if (pageControl != null)
+            {
+                pageControl.Dock = DockStyle.Fill;
+                pageControl.Margin = new Padding(0);
+                pageControl.Location = new Point(0, 0);
+                _pnlContentHost.Controls.Add(pageControl);
+                pageControl.BringToFront();
+                pageControl.Show();
+            }
+
+            _pnlContentHost.ResumeLayout(true);
         }
 
-        private void EmbedForm<T>(ref Form? formField, Func<T> factory) where T : Form
+        private Control GetEmbeddedForm<T>(ref Form? formField, Func<T> factory) where T : Form
         {
             if (formField == null || formField.IsDisposed)
             {
                 formField = factory();
+                formField.TopLevel = false;
+                formField.FormBorderStyle = FormBorderStyle.None;
             }
-            formField.TopLevel = false;
-            formField.FormBorderStyle = FormBorderStyle.None;
-            formField.Dock = DockStyle.Fill;
-            _pnlContentHost.Controls.Add(formField);
-            formField.Show();
+            return formField;
         }
 
         private void flpGamesGrid_SizeChanged()

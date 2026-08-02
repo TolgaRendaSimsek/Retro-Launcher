@@ -20,6 +20,7 @@ static class Program
         ControllerSyncServiceTests.RunTests();
         EmulatorInstallationActionTests.RunTests();
         EmulatorManagerLayoutTests.RunTests();
+        MainWindowLayoutTests.RunTests();
 #endif
         Application.Run(new MainForm());
     }    
