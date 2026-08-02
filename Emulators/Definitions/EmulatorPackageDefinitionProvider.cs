@@ -24,7 +24,7 @@ namespace RetroLauncher.Emulators.Definitions
 
         public JsonEmulatorPackageDefinitionProvider(string? filePath = null)
         {
-            _filePath = filePath ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "emulator_definitions.json");
+            _filePath = filePath ?? ApplicationPaths.ResolveWritablePath("Config/emulator_definitions.json");
             LoadDefinitions();
         }
 
