@@ -425,8 +425,8 @@ namespace RetroLauncher
                 deployed = true;
                 EmulatorInstallDiagnosticsLogger.LogToSession(opId, $"Deployment: Moved staging folder to '{finalDestPath}'");
 
-                // 3. Restore user configuration and save files from backup
-                if (backedUp && Directory.Exists(backupDir))
+                // 3. Restore user configuration and save files from backup if not a clean Install
+                if (backedUp && Directory.Exists(backupDir) && request.Operation != EmulatorInstallationOperation.Install)
                 {
                     RestoreUserFolders(backupDir, finalDestPath, definition);
                     EmulatorInstallDiagnosticsLogger.LogToSession(opId, "Deployment: Restored user configuration/save data from backup");
@@ -557,6 +557,16 @@ namespace RetroLauncher
 
         public async Task<PackageInstallResult> ReinstallAsync(EmulatorInstallationRequest request)
         {
+            var emuItem = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(x => string.Equals(x.Id, request.EmulatorId, StringComparison.OrdinalIgnoreCase));
+            bool isInstalled = emuItem != null && EmulatorManager.IsEmulatorInstalled(emuItem);
+
+            if (!isInstalled)
+            {
+                EmulatorInstallDiagnosticsLogger.LogToSession(request.OperationId, $"Reinstall requested for uninstalled emulator '{request.EmulatorId}'. Redirecting to Install operation.");
+                request.Operation = EmulatorInstallationOperation.Install;
+                return await InstallInternalAsync(request);
+            }
+
             var definition = _definitionProvider.GetById(request.EmulatorId);
             if (definition != null && IsEmulatorRunning(definition))
             {
@@ -568,6 +578,8 @@ namespace RetroLauncher
                     ErrorMessage = $"Cannot reinstall '{definition.DisplayName}' because it is currently running. Please close the application and retry."
                 };
             }
+
+            request.Operation = EmulatorInstallationOperation.Reinstall;
             return await InstallInternalAsync(request);
         }
 

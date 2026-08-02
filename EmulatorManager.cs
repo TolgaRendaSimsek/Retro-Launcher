@@ -74,7 +74,23 @@ namespace RetroLauncher
 
         public List<EmulatorItem> DetectInstalledEmulators()
         {
-            return Config.Emulators.Where(emu => VerifyExecutable(emu.Id)).ToList();
+            return Config.Emulators.Where(emu => IsEmulatorInstalled(emu)).ToList();
+        }
+
+        public static bool IsEmulatorInstalled(EmulatorItem emu)
+        {
+            if (emu == null) return false;
+            if (emu.Status == "Missing" || string.IsNullOrEmpty(emu.Path)) return false;
+
+            string resolvedExe = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.Path));
+            string resolvedDir = !string.IsNullOrEmpty(emu.InstallFolder)
+                ? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.InstallFolder))
+                : (Path.GetDirectoryName(resolvedExe) ?? "");
+
+            bool exeExists = File.Exists(resolvedExe);
+            bool dirExists = Directory.Exists(resolvedDir);
+
+            return exeExists && dirExists;
         }
 
         public bool VerifyExecutable(string emulatorId)

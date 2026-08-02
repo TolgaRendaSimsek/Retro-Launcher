@@ -14,6 +14,10 @@ namespace RetroLauncher
         private bool _isUpdatingSelection = false;
 
         private Button btnCancel = null!;
+        private Button btnInstall = null!;
+        private Button btnReinstall = null!;
+        private Button btnRepair = null!;
+        private Button btnUpdate = null!;
         private Button btnUninstall = null!;
         private Button btnOpenFolder = null!;
         private Button btnSyncBios = null!;
@@ -73,7 +77,6 @@ namespace RetroLauncher
             btnAdd.Click += btnAdd_Click;
             btnRemove.Click += btnRemove_Click;
             btnTestLaunch.Click += btnTestLaunch_Click;
-            btnInstallDuckStationApi.Click += btnInstallDuckStationApi_Click;
             btnSaveClose.Click += btnSaveClose_Click;
 
             // Adjust Form size to give us more vertical room
@@ -196,9 +199,61 @@ namespace RetroLauncher
             btnTestLaunch.Width = 380;
             btnTestLaunch.Height = 35;
 
-            btnInstallDuckStationApi.Location = new Point(260, 320);
-            btnInstallDuckStationApi.Width = 380;
-            btnInstallDuckStationApi.Height = 35;
+            btnInstall = new Button
+            {
+                Text = "⬇️  INSTALL EMULATOR",
+                Location = new Point(260, 320),
+                Size = new Size(380, 35),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(16, 185, 129),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+            btnInstall.FlatAppearance.BorderSize = 0;
+            btnInstall.Click += async (s, e) => await ExecuteOperationAsync(EmulatorInstallationOperation.Install);
+            this.Controls.Add(btnInstall);
+
+            btnReinstall = new Button
+            {
+                Text = "🔄 Reinstall",
+                Location = new Point(260, 320),
+                Size = new Size(120, 35),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(99, 102, 241),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+            btnReinstall.FlatAppearance.BorderSize = 0;
+            btnReinstall.Click += async (s, e) => await ExecuteOperationAsync(EmulatorInstallationOperation.Reinstall);
+            this.Controls.Add(btnReinstall);
+
+            btnRepair = new Button
+            {
+                Text = "🛠️ Repair",
+                Location = new Point(390, 320),
+                Size = new Size(120, 35),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(79, 70, 229),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+            btnRepair.FlatAppearance.BorderSize = 0;
+            btnRepair.Click += async (s, e) => await ExecuteOperationAsync(EmulatorInstallationOperation.Repair);
+            this.Controls.Add(btnRepair);
+
+            btnUpdate = new Button
+            {
+                Text = "⬆️ Update",
+                Location = new Point(520, 320),
+                Size = new Size(120, 35),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(245, 158, 11),
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+            btnUpdate.FlatAppearance.BorderSize = 0;
+            btnUpdate.Click += async (s, e) => await ExecuteOperationAsync(EmulatorInstallationOperation.Update);
+            this.Controls.Add(btnUpdate);
 
             pbProgress.Location = new Point(260, 368);
             pbProgress.Width = 300;
@@ -348,7 +403,10 @@ namespace RetroLauncher
             // Hover styles
             SetupHover(btnSaveClose, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
             SetupHover(btnTestLaunch, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
-            SetupHover(btnInstallDuckStationApi, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
+            SetupHover(btnInstall, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
+            SetupHover(btnReinstall, Color.FromArgb(99, 102, 241), Color.FromArgb(79, 70, 229));
+            SetupHover(btnRepair, Color.FromArgb(79, 70, 229), Color.FromArgb(67, 56, 202));
+            SetupHover(btnUpdate, Color.FromArgb(245, 158, 11), Color.FromArgb(217, 119, 6));
             SetupHover(btnAdd, Color.FromArgb(16, 185, 129), Color.FromArgb(5, 150, 105));
             SetupHover(btnRemove, Color.FromArgb(239, 68, 68), Color.FromArgb(220, 38, 38));
             SetupHover(btnCancel, Color.FromArgb(107, 114, 128), Color.FromArgb(75, 85, 99));
@@ -805,41 +863,68 @@ namespace RetroLauncher
 
         private void UpdateButtonActions(EmulatorItem emu, string status)
         {
-            if (status == "Installing")
+            bool isInstalled = EmulatorManager.IsEmulatorInstalled(emu);
+            bool isUpdateAvailable = isInstalled && !string.IsNullOrEmpty(emu.LatestVersion) && !string.IsNullOrEmpty(emu.InstalledVersion)
+                && EmulatorManager.IsUpdateAvailable(emu.Id, emu.InstalledVersion, emu.LatestVersion)
+                && emu.LatestVersion != "Update check unavailable";
+
+            if (_isInstalling)
             {
-                btnInstallDuckStationApi.Text = "⏳  INSTALLING...";
-                btnInstallDuckStationApi.Enabled = false;
-                btnBrowse.Enabled = false;
+                btnInstall.Enabled = false;
+                btnReinstall.Enabled = false;
+                btnRepair.Enabled = false;
+                btnUpdate.Enabled = false;
                 btnUninstall.Enabled = false;
+                btnTestLaunch.Enabled = false;
+                btnBrowse.Enabled = false;
+                btnOpenFolder.Enabled = false;
                 btnCancel.Visible = true;
+                pbProgress.Visible = true;
+                return;
+            }
+
+            btnCancel.Visible = false;
+            btnBrowse.Enabled = true;
+
+            if (!isInstalled)
+            {
+                // NOT INSTALLED: Show Install button only. Hide Launch, Reinstall, Repair, Update, Uninstall.
+                btnTestLaunch.Visible = false;
+                btnInstall.Visible = true;
+                btnInstall.Enabled = true;
+
+                btnReinstall.Visible = false;
+                btnReinstall.Enabled = false;
+
+                btnRepair.Visible = false;
+                btnRepair.Enabled = false;
+
+                btnUpdate.Visible = false;
+                btnUpdate.Enabled = false;
+
+                btnUninstall.Enabled = false;
                 btnOpenFolder.Enabled = false;
             }
             else
             {
-                btnCancel.Visible = false;
-                btnBrowse.Enabled = true;
+                // INSTALLED: Show Launch, Repair, Reinstall, Uninstall. Show Update ONLY if newer release exists.
+                btnTestLaunch.Visible = true;
+                btnTestLaunch.Enabled = true;
 
-                if (status == "Missing" || status == "Installation failed")
-                {
-                    btnInstallDuckStationApi.Text = "⬇️  INSTALL EMULATOR";
-                    btnInstallDuckStationApi.Enabled = true;
-                    btnUninstall.Enabled = false;
-                    btnOpenFolder.Enabled = false;
-                }
-                else if (status == "Update available")
-                {
-                    btnInstallDuckStationApi.Text = "🔄  UPDATE EMULATOR";
-                    btnInstallDuckStationApi.Enabled = true;
-                    btnUninstall.Enabled = true;
-                    btnOpenFolder.Enabled = true;
-                }
-                else // Installed or Manually configured
-                {
-                    btnInstallDuckStationApi.Text = "🛠️  REPAIR / REINSTALL";
-                    btnInstallDuckStationApi.Enabled = true;
-                    btnUninstall.Enabled = true;
-                    btnOpenFolder.Enabled = true;
-                }
+                btnInstall.Visible = false;
+                btnInstall.Enabled = false;
+
+                btnReinstall.Visible = true;
+                btnReinstall.Enabled = true;
+
+                btnRepair.Visible = true;
+                btnRepair.Enabled = true;
+
+                btnUninstall.Enabled = true;
+                btnOpenFolder.Enabled = true;
+
+                btnUpdate.Visible = isUpdateAvailable;
+                btnUpdate.Enabled = isUpdateAvailable;
             }
         }
 
@@ -1145,7 +1230,6 @@ namespace RetroLauncher
             bool keepData = (keepResult == DialogResult.Yes);
 
             btnUninstall.Enabled = false;
-            btnInstallDuckStationApi.Enabled = false;
             lblStatus.Text = "Uninstalling...";
 
             try
@@ -1190,22 +1274,21 @@ namespace RetroLauncher
             finally
             {
                 btnUninstall.Enabled = true;
-                btnInstallDuckStationApi.Enabled = true;
                 lblStatus.Text = "";
                 UpdateDetectedStatus(selectedEmu);
                 RefreshList();
             }
         }
 
-        private async void btnInstallDuckStationApi_Click(object? sender, EventArgs e)
+        private async Task ExecuteOperationAsync(EmulatorInstallationOperation operation)
         {
             if (lbEmulators.SelectedItem is not EmulatorItem selectedEmu) return;
             if (_isInstalling) return;
             _isInstalling = true;
 
-            // Check if manually configured
+            // Check if manually configured when performing clean Install
             string resolved = ResolvePath(selectedEmu.Path);
-            if (File.Exists(resolved))
+            if (File.Exists(resolved) && operation == EmulatorInstallationOperation.Install)
             {
                 string standardPath = string.IsNullOrEmpty(selectedEmu.InstallFolder) 
                     ? "" 
@@ -1228,38 +1311,11 @@ namespace RetroLauncher
                 }
             }
 
-            var operation = EmulatorInstallationOperation.Install;
-            string btnText = btnInstallDuckStationApi.Text;
-            if (btnText.Contains("INSTALL EMULATOR"))
-            {
-                operation = EmulatorInstallationOperation.Install;
-            }
-            else if (btnText.Contains("UPDATE EMULATOR"))
-            {
-                operation = EmulatorInstallationOperation.Update;
-            }
-            else if (btnText.Contains("REPAIR / REINSTALL"))
-            {
-                var choice = MessageBox.Show(
-                    "Do you want to Repair the installation (verifies the files and registry without downloading unless files are missing) or Reinstall (force-downloads and performs a clean installation)?\n\nClick Yes for Repair, No for Reinstall, or Cancel to abort.",
-                    "Repair or Reinstall?",
-                    MessageBoxButtons.YesNoCancel,
-                    MessageBoxIcon.Question
-                );
-                
-                if (choice == DialogResult.Cancel)
-                {
-                    _isInstalling = false;
-                    return;
-                }
-                
-                operation = (choice == DialogResult.Yes) 
-                    ? EmulatorInstallationOperation.Repair 
-                    : EmulatorInstallationOperation.Reinstall;
-            }
-
-            // Disable conflicting buttons
-            btnInstallDuckStationApi.Enabled = false;
+            // Disable action buttons
+            btnInstall.Enabled = false;
+            btnReinstall.Enabled = false;
+            btnRepair.Enabled = false;
+            btnUpdate.Enabled = false;
             btnSaveClose.Enabled = false;
             btnAdd.Enabled = false;
             btnRemove.Enabled = false;
@@ -1302,10 +1358,8 @@ namespace RetroLauncher
                     string actionCompleted = operation.ToString();
                     MessageBox.Show($"{selectedEmu.Name} operation {actionCompleted} completed successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     
-                    // Reload settings
                     _config = EmulatorManager.LoadConfig();
                     
-                    // Sync fields
                     var updatedEmu = _config.Emulators.FirstOrDefault(x => string.Equals(x.Id, selectedEmu.Id, StringComparison.OrdinalIgnoreCase));
                     if (updatedEmu != null)
                     {
@@ -1338,11 +1392,9 @@ namespace RetroLauncher
                 _cts = null;
                 _isInstalling = false;
 
-                btnInstallDuckStationApi.Enabled = true;
                 btnSaveClose.Enabled = true;
                 btnAdd.Enabled = true;
                 btnRemove.Enabled = true;
-                btnTestLaunch.Enabled = true;
                 btnBrowse.Enabled = true;
                 pbProgress.Visible = false;
                 btnCancel.Visible = false;
