@@ -51,7 +51,7 @@ namespace RetroLauncher.Emulators.Registry
 
     public class EmulatorManager
     {
-        private static readonly string ConfigPath = Path.Combine(AppContext.BaseDirectory, "emulators.json");
+        private static readonly string ConfigPath = ApplicationPaths.EmulatorsJson;
         private static EmulatorManager? _instance;
         public static EmulatorManager Instance => _instance ??= new EmulatorManager();
 
@@ -82,9 +82,9 @@ namespace RetroLauncher.Emulators.Registry
             if (emu == null) return false;
             if (emu.Status == "Missing" || string.IsNullOrEmpty(emu.Path)) return false;
 
-            string resolvedExe = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.Path));
+            string resolvedExe = ApplicationPaths.ResolveWritablePath(emu.Path);
             string resolvedDir = !string.IsNullOrEmpty(emu.InstallFolder)
-                ? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.InstallFolder))
+                ? ApplicationPaths.ResolveWritablePath(emu.InstallFolder)
                 : (Path.GetDirectoryName(resolvedExe) ?? "");
 
             bool exeExists = File.Exists(resolvedExe);
@@ -481,13 +481,12 @@ namespace RetroLauncher.Emulators.Registry
         private string ResolvePath(string path)
         {
             if (string.IsNullOrEmpty(path)) return "";
-            if (Path.IsPathRooted(path)) return path;
-            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
+            return ApplicationPaths.ResolveWritablePath(path);
         }
 
         private string MakeRelativePath(string fullPath)
         {
-            string baseDir = AppContext.BaseDirectory;
+            string baseDir = ApplicationPaths.BaseDataDir;
             if (fullPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
             {
                 return fullPath.Substring(baseDir.Length).TrimStart(Path.DirectorySeparatorChar);

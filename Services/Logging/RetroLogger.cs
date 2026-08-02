@@ -5,7 +5,7 @@ namespace RetroLauncher.Services.Logging
 {
     public static class RetroLogger
     {
-        private static readonly string LogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "package_manager.log");
+        private static readonly string LogPath = Path.Combine(ApplicationPaths.LogsDir, "package_manager.log");
         private static readonly object LogLock = new object();
 
         public static void Log(string message, string level = "INFO")

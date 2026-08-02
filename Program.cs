@@ -9,6 +9,7 @@ static class Program
     static void Main()
     {
         ApplicationConfiguration.Initialize();
+        ApplicationPaths.EnsureDirectoriesExist();
 #if DEBUG
         ReleaseAssetSelectorTests.RunTests();
         ArchiveExtractorTests.RunTestsAsync().GetAwaiter().GetResult();

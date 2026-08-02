@@ -13,8 +13,8 @@ namespace RetroLauncher.Resources.Localization
 
     public class LocalizationManager
     {
-        private static readonly string SettingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "language_settings.json");
-        private static readonly string LocalesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "locales");
+        private static readonly string SettingsPath = ApplicationPaths.LanguageSettingsJson;
+        private static readonly string LocalesDir = Path.Combine(AppContext.BaseDirectory, "locales");
         private static readonly object FileLock = new object();
 
         private static LocalizationManager? _instance;

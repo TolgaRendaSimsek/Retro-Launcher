@@ -34,7 +34,7 @@ namespace RetroLauncher.Services.Installation
 
     public static class EmulatorInstallDiagnosticsLogger
     {
-        private static readonly string BaseLogDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "package-installation");
+        private static readonly string BaseLogDirectory = Path.Combine(ApplicationPaths.LogsDir, "package-installation");
         private static readonly object FileLock = new object();
         private static readonly ConcurrentDictionary<string, InstallationDiagnosticSession> Sessions = new ConcurrentDictionary<string, InstallationDiagnosticSession>();
 

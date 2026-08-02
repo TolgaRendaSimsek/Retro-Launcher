@@ -19,8 +19,8 @@ namespace RetroLauncher.Services
 
     public class ScreenshotManager
     {
-        private static readonly string ScreenshotsJsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "screenshots.json");
-        private static readonly string ScreenshotsBaseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "screenshots");
+        private static readonly string ScreenshotsJsonPath = Path.Combine(ApplicationPaths.ConfigDir, "screenshots.json");
+        private static readonly string ScreenshotsBaseDir = Path.Combine(ApplicationPaths.BaseDataDir, "screenshots");
         private static readonly object FileLock = new object();
 
         private Dictionary<string, ScreenshotMetadata> _screenshots = new();

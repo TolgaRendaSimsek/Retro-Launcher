@@ -25,7 +25,7 @@ namespace RetroLauncher.Emulators.Adapters
         {
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emu == null || string.IsNullOrEmpty(emu.ExecutablePath)) return "";
-            string fullPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.ExecutablePath));
+            string fullPath = ApplicationPaths.ResolveWritablePath(emu.ExecutablePath);
 
             // Create portable.txt beside the executable path to force DuckStation portable mode
             if (File.Exists(fullPath))
@@ -54,7 +54,7 @@ namespace RetroLauncher.Emulators.Adapters
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
             string exePath = GetExecutablePath();
-            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             
             var psi = new ProcessStartInfo
@@ -104,7 +104,7 @@ namespace RetroLauncher.Emulators.Adapters
             string exePath = GetExecutablePath();
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
 
-            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             if (string.IsNullOrEmpty(game.RomPath) || (!File.Exists(romPath) && !Directory.Exists(romPath))) return false;
 
             return true;
@@ -117,7 +117,7 @@ namespace RetroLauncher.Emulators.Adapters
 
         public string GetScreenshotFolder(Game game)
         {
-            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Emulators", "PS1", "screenshots"));
+            return Path.GetFullPath(Path.Combine(ApplicationPaths.EmulatorsDir, "PS1", "screenshots"));
         }
 
         public GlobalControllerConfig ImportControllerConfiguration()
@@ -218,7 +218,7 @@ namespace RetroLauncher.Emulators.Adapters
         private string GetIniPath()
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "DuckStation") : Path.GetDirectoryName(exePath) ?? "";
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(ApplicationPaths.EmulatorsDir, "DuckStation") : Path.GetDirectoryName(exePath) ?? "";
             
             string portableIni = Path.Combine(emuDir, "settings.ini");
             if (File.Exists(portableIni) || File.Exists(Path.Combine(emuDir, "portable.txt")))

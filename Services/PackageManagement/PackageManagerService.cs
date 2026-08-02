@@ -19,7 +19,7 @@ namespace RetroLauncher.Services.PackageManagement
         private readonly List<IArchiveExtractor> _extractors;
         private readonly IPackageUpdateService _updateService;
 
-        private static readonly string LogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "package_manager.log");
+        private static readonly string LogPath = Path.Combine(ApplicationPaths.LogsDir, "package_manager.log");
         private static readonly object LogLock = new object();
 
         public PackageManagerService(

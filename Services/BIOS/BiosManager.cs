@@ -11,7 +11,7 @@ namespace RetroLauncher.Services.BIOS
 {
     public class BiosManager
     {
-        private static readonly string ConfigPath = Path.Combine(AppContext.BaseDirectory, "bios.json");
+        private static readonly string ConfigPath = ApplicationPaths.BiosJson;
         private static readonly object FileLock = new object();
 
         private BiosConfig _config = new();
@@ -26,15 +26,14 @@ namespace RetroLauncher.Services.BIOS
 
         public static string GetCentralizedBiosRoot()
         {
-            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            return Path.Combine(localAppData, "RetroLauncher", "BIOS");
+            return ApplicationPaths.BiosDir;
         }
 
         public void LogDiagnostic(string message)
         {
             try
             {
-                string logDir = Path.Combine(AppContext.BaseDirectory, "logs");
+                string logDir = ApplicationPaths.LogsDir;
                 if (!Directory.Exists(logDir))
                 {
                     Directory.CreateDirectory(logDir);

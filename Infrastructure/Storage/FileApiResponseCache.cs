@@ -14,7 +14,7 @@ namespace RetroLauncher.Infrastructure.Storage
 
         public FileApiResponseCache(string? cacheDir = null)
         {
-            _cacheDir = cacheDir ?? Path.Combine(AppContext.BaseDirectory, "Cache", "Metadata");
+            _cacheDir = cacheDir ?? Path.Combine(ApplicationPaths.CacheDir, "Metadata");
         }
 
         private object GetLock(string key)

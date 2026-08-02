@@ -422,7 +422,7 @@ namespace RetroLauncher.Services.PackageManagement
 
     public class JsonInstalledPackageRepository : IPackageRepository
     {
-        private static readonly string RegistryPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "installed_packages.json");
+        private static readonly string RegistryPath = Path.Combine(ApplicationPaths.ConfigDir, "installed_packages.json");
         private static readonly object FileLock = new object();
         private InstalledPackagesConfig _config = new();
 

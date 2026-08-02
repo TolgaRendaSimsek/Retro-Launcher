@@ -6,7 +6,7 @@ namespace RetroLauncher.Services.Controllers
 {
     public class GlobalControllerConfigManager
     {
-        private static readonly string ConfigPath = Path.Combine(AppContext.BaseDirectory, "controller_global_settings.json");
+        private static readonly string ConfigPath = ApplicationPaths.GlobalControllerConfigJson;
         private static readonly object FileLock = new object();
         private static GlobalControllerConfigManager? _instance;
         public static GlobalControllerConfigManager Instance => _instance ??= new GlobalControllerConfigManager();

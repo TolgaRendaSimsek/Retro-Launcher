@@ -26,13 +26,13 @@ namespace RetroLauncher.Emulators.Adapters
         {
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emu == null || string.IsNullOrEmpty(emu.ExecutablePath)) return "";
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, emu.ExecutablePath));
+            return ApplicationPaths.ResolveWritablePath(emu.ExecutablePath);
         }
 
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
             string exePath = GetExecutablePath();
-            string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             
             var psi = new ProcessStartInfo
@@ -82,7 +82,7 @@ namespace RetroLauncher.Emulators.Adapters
             string exePath = GetExecutablePath();
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
 
-            string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             if (string.IsNullOrEmpty(game.RomPath) || (!File.Exists(romPath) && !Directory.Exists(romPath))) return false;
 
             return true;
@@ -95,7 +95,7 @@ namespace RetroLauncher.Emulators.Adapters
 
         public string GetScreenshotFolder(Game game)
         {
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", "PS2", "snaps"));
+            return Path.GetFullPath(Path.Combine(ApplicationPaths.EmulatorsDir, "PS2", "snaps"));
         }
 
         public GlobalControllerConfig ImportControllerConfiguration()
@@ -198,7 +198,7 @@ namespace RetroLauncher.Emulators.Adapters
         private string GetIniPath()
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "PCSX2") : Path.GetDirectoryName(exePath) ?? "";
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(ApplicationPaths.EmulatorsDir, "PCSX2") : Path.GetDirectoryName(exePath) ?? "";
             
             string portableIni = Path.Combine(emuDir, "inis", "PCSX2.ini");
             if (File.Exists(portableIni) || Directory.Exists(Path.Combine(emuDir, "inis")))

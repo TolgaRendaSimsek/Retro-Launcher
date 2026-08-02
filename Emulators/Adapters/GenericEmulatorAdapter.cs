@@ -34,22 +34,22 @@ namespace RetroLauncher.Emulators.Adapters
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emu != null && !string.IsNullOrEmpty(emu.ExecutablePath))
             {
-                return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, emu.ExecutablePath));
+                return ApplicationPaths.ResolveWritablePath(emu.ExecutablePath);
             }
 
             var emuByPath = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.ExecutablePath, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emuByPath != null)
             {
-                return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, emuByPath.ExecutablePath));
+                return ApplicationPaths.ResolveWritablePath(emuByPath.ExecutablePath);
             }
 
-            return Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, EmulatorId));
+            return ApplicationPaths.ResolveWritablePath(EmulatorId);
         }
 
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
             string exePath = GetExecutablePath();
-            string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase) || string.Equals(e.ExecutablePath, EmulatorId, StringComparison.OrdinalIgnoreCase));
             string defaultArgs = emu?.DefaultLaunchArguments ?? "";
 
@@ -95,7 +95,7 @@ namespace RetroLauncher.Emulators.Adapters
             string exePath = GetExecutablePath();
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
 
-            string romPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             if (string.IsNullOrEmpty(game.RomPath) || (!File.Exists(romPath) && !Directory.Exists(romPath))) return false;
 
             return true;
@@ -109,7 +109,7 @@ namespace RetroLauncher.Emulators.Adapters
         public string GetScreenshotFolder(Game game)
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", EmulatorId) : Path.GetDirectoryName(exePath) ?? "";
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(ApplicationPaths.EmulatorsDir, EmulatorId) : Path.GetDirectoryName(exePath) ?? "";
             return Path.Combine(emuDir, "screenshots");
         }
 
@@ -161,7 +161,7 @@ namespace RetroLauncher.Emulators.Adapters
         private string GetGenericConfigFile()
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", EmulatorId) : Path.GetDirectoryName(exePath) ?? "";
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(ApplicationPaths.EmulatorsDir, EmulatorId) : Path.GetDirectoryName(exePath) ?? "";
             return Path.Combine(emuDir, "controller_profile.json");
         }
     }

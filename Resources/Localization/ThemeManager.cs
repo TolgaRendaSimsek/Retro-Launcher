@@ -30,7 +30,7 @@ namespace RetroLauncher.Resources.Localization
 
     public class ThemeManager
     {
-        private static readonly string SettingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "theme_settings.json");
+        private static readonly string SettingsPath = ApplicationPaths.ThemeSettingsJson;
         private static readonly object LockObj = new();
         private static readonly ConditionalWeakTable<Control, StrongBox<float>> BaseFontSizes = new();
 

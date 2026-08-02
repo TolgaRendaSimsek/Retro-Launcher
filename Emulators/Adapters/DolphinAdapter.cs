@@ -26,13 +26,13 @@ namespace RetroLauncher.Emulators.Adapters
         {
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emu == null || string.IsNullOrEmpty(emu.ExecutablePath)) return "";
-            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.ExecutablePath));
+            return ApplicationPaths.ResolveWritablePath(emu.ExecutablePath);
         }
 
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
             string exePath = GetExecutablePath();
-            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
 
             var psi = new ProcessStartInfo
@@ -73,7 +73,7 @@ namespace RetroLauncher.Emulators.Adapters
             string exePath = GetExecutablePath();
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
 
-            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             return File.Exists(romPath) || Directory.Exists(romPath);
         }
 
@@ -85,7 +85,7 @@ namespace RetroLauncher.Emulators.Adapters
         public string GetScreenshotFolder(Game game)
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "Dolphin") : Path.GetDirectoryName(exePath) ?? "";
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(ApplicationPaths.EmulatorsDir, "Dolphin") : Path.GetDirectoryName(exePath) ?? "";
             return Path.Combine(emuDir, "User", "ScreenShots");
         }
 
@@ -167,7 +167,7 @@ namespace RetroLauncher.Emulators.Adapters
         private string GetGCPadIniPath()
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "Dolphin") : Path.GetDirectoryName(exePath) ?? "";
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(ApplicationPaths.EmulatorsDir, "Dolphin") : Path.GetDirectoryName(exePath) ?? "";
             return Path.Combine(emuDir, "User", "Config", "GCPadNew.ini");
         }
     }

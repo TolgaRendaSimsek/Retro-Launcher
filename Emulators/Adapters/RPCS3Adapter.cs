@@ -25,13 +25,13 @@ namespace RetroLauncher.Emulators.Adapters
         {
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
             if (emu == null || string.IsNullOrEmpty(emu.ExecutablePath)) return "";
-            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, emu.ExecutablePath));
+            return ApplicationPaths.ResolveWritablePath(emu.ExecutablePath);
         }
 
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
             string exePath = GetExecutablePath();
-            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
 
             var psi = new ProcessStartInfo
@@ -76,7 +76,7 @@ namespace RetroLauncher.Emulators.Adapters
             string exePath = GetExecutablePath();
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return false;
 
-            string romPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, game.RomPath));
+            string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
             if (string.IsNullOrEmpty(game.RomPath)) return false;
 
             if (File.Exists(romPath)) return true;
@@ -100,7 +100,7 @@ namespace RetroLauncher.Emulators.Adapters
 
         public string GetScreenshotFolder(Game game)
         {
-            return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Emulators", "RPCS3", "captures"));
+            return Path.GetFullPath(Path.Combine(ApplicationPaths.EmulatorsDir, "RPCS3", "captures"));
         }
 
         public GlobalControllerConfig ImportControllerConfiguration()
@@ -175,7 +175,7 @@ namespace RetroLauncher.Emulators.Adapters
         private string GetInputConfigPath()
         {
             string exePath = GetExecutablePath();
-            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(AppContext.BaseDirectory, "Emulators", "RPCS3") : Path.GetDirectoryName(exePath) ?? "";
+            string emuDir = string.IsNullOrEmpty(exePath) ? Path.Combine(ApplicationPaths.EmulatorsDir, "RPCS3") : Path.GetDirectoryName(exePath) ?? "";
             return Path.Combine(emuDir, "config_input.yml");
         }
     }

@@ -320,9 +320,9 @@ namespace RetroLauncher.Services.Installation
 
             // Step 7: Extract to Staging Sandbox
             ReportProgress(request, PackageInstallStage.Extracting, "Extracting files...", 80);
-            string finalDestPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, definition.InstallDirectoryName));
-            string stagingDir = Path.Combine(AppContext.BaseDirectory, "temp", "install", definition.Id, opId, "staging");
-            string backupDir = Path.Combine(AppContext.BaseDirectory, "temp", "install", definition.Id, opId, "backup");
+            string finalDestPath = ApplicationPaths.ResolveWritablePath(definition.InstallDirectoryName);
+            string stagingDir = Path.Combine(ApplicationPaths.TempDir, "install", definition.Id, opId, "staging");
+            string backupDir = Path.Combine(ApplicationPaths.TempDir, "install", definition.Id, opId, "backup");
 
             EmulatorInstallDiagnosticsLogger.SetArchiveType(opId, Path.GetExtension(asset.Name).ToLower().TrimStart('.'));
             EmulatorInstallDiagnosticsLogger.SetExtractionDestination(opId, finalDestPath);

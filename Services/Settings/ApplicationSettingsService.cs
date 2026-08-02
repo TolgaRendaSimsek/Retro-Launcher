@@ -7,7 +7,7 @@ namespace RetroLauncher.Services.Settings
 {
     public class ApplicationSettingsService : IApplicationSettingsService
     {
-        private static readonly string SettingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
+        private static readonly string SettingsPath = ApplicationPaths.SettingsJson;
         private static ApplicationSettingsService? _instance;
         public static ApplicationSettingsService Instance => _instance ??= new ApplicationSettingsService();
 

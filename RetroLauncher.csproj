@@ -6,6 +6,23 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Release Publish & Single File Configuration -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    
+    <!-- Assembly Metadata -->
+    <ProductName>Retro Launcher</ProductName>
+    <Description>Classic Game Library and Emulator Manager</Description>
+    <Company>Retro Launcher</Company>
+    <Authors>Retro Launcher</Authors>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,9 +36,5 @@
     <PackageReference Include="SharpCompress" Version="0.50.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.10" />
   </ItemGroup>
-
-  <Target Name="BuildUpdater" AfterTargets="Build">
-    <MSBuild Projects="RetroLauncherUpdater\RetroLauncherUpdater.csproj" Targets="Build" Properties="Configuration=$(Configuration);OutputPath=$(TargetDir)" />
-  </Target>
 
 </Project>

@@ -9,7 +9,7 @@ namespace RetroLauncher.Services
 {
     public class GameLibraryManager
     {
-        private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "games.json");
+        private static readonly string ConfigPath = ApplicationPaths.GamesJson;
         public List<Game> Games { get; private set; } = new();
         private readonly JsonSerializerOptions _jsonOptions;
 
@@ -340,16 +340,7 @@ namespace RetroLauncher.Services
         private string ResolvePath(string path)
         {
             if (string.IsNullOrEmpty(path)) return "";
-            if (Path.IsPathRooted(path)) return path;
-
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string testPath1 = Path.Combine(baseDir, path);
-            if (File.Exists(testPath1) || Directory.Exists(testPath1)) return testPath1;
-
-            string testPath2 = Path.Combine(Directory.GetCurrentDirectory(), path);
-            if (File.Exists(testPath2) || Directory.Exists(testPath2)) return testPath2;
-
-            return testPath1;
+            return ApplicationPaths.ResolveWritablePath(path);
         }
     }
 }

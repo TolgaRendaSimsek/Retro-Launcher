@@ -30,8 +30,8 @@ namespace RetroLauncher.Services
 
     public class SaveManager
     {
-        private static readonly string SavesJsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "saves.json");
-        private static readonly string BackupDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "backups", "saves");
+        private static readonly string SavesJsonPath = Path.Combine(ApplicationPaths.ConfigDir, "saves.json");
+        private static readonly string BackupDir = Path.Combine(ApplicationPaths.SavesDir, "backups");
         private static readonly object FileLock = new object();
 
         private Dictionary<string, SaveMetadata> _metadata = new();
@@ -185,20 +185,20 @@ namespace RetroLauncher.Services
 
             if (cleanId.Contains("duckstation"))
             {
-                defaultPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", "PS1", "memcards");
+                defaultPath = Path.Combine(ApplicationPaths.EmulatorsDir, "PS1", "memcards");
             }
             else if (cleanId.Contains("pcsx2"))
             {
-                defaultPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", "PS2", "memcards");
+                defaultPath = Path.Combine(ApplicationPaths.EmulatorsDir, "PS2", "memcards");
             }
             else if (cleanId.Contains("rpcs3"))
             {
-                defaultPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Emulators", "PS3", "dev_hdd0", "home", "00000001", "savedata");
+                defaultPath = Path.Combine(ApplicationPaths.EmulatorsDir, "PS3", "dev_hdd0", "home", "00000001", "savedata");
             }
             else
             {
                 // General fallback
-                defaultPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Saves", cleanId);
+                defaultPath = Path.Combine(ApplicationPaths.SavesDir, cleanId);
             }
 
             return defaultPath;
