@@ -44,6 +44,7 @@ static class Program
         EmulatorInstallationActionTests.RunTests();
         EmulatorManagerLayoutTests.RunTests();
         MainWindowLayoutTests.RunTests();
+        RetroLauncher.Tests.Unit.MasterControllerKeyboardPresetTests.RunTests();
         RetroLauncher.Tests.Unit.ApplicationUpdateServiceTests.RunTestsAsync().GetAwaiter().GetResult();
         RetroLauncher.Tests.Unit.GameLaunchServiceTests.RunTestsAsync().GetAwaiter().GetResult();
 #endif

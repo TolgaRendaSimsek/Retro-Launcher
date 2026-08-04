@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Windows.Forms;
+using RetroLauncher.Core.Enums;
 
 namespace RetroLauncher.Core.Models
 {
@@ -24,8 +26,41 @@ namespace RetroLauncher.Core.Models
         public bool EnableRumble { get; set; } = true;
         public float RumbleStrength { get; set; } = 1.0f;
 
-        // Mappings: Standard Key -> Input Binding
+        // Button Mappings for Gamepads (Action Name -> Button Input)
         public Dictionary<string, string> ButtonMappings { get; set; } = GetDefaultButtonMappings();
+
+        // Keyboard Mappings (Action Name -> Keys enum string e.g. "W", "Space")
+        public Dictionary<string, string> KeyboardMappings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public List<KeyboardMapping> GetKeyboardMappings()
+        {
+            var list = new List<KeyboardMapping>();
+            foreach (VirtualControllerAction action in Enum.GetValues(typeof(VirtualControllerAction)))
+            {
+                Keys? key = null;
+                if (KeyboardMappings.TryGetValue(action.ToString(), out string? keyName) && Enum.TryParse(keyName, out Keys parsedKey))
+                {
+                    key = parsedKey;
+                }
+                list.Add(new KeyboardMapping { Action = action, Key = key });
+            }
+            return list;
+        }
+
+        public void SetKeyboardMappings(IEnumerable<KeyboardMapping> mappings)
+        {
+            foreach (var m in mappings)
+            {
+                if (m.Key.HasValue)
+                {
+                    KeyboardMappings[m.Action.ToString()] = m.Key.Value.ToString();
+                }
+                else
+                {
+                    KeyboardMappings.Remove(m.Action.ToString());
+                }
+            }
+        }
 
         public static Dictionary<string, string> GetDefaultButtonMappings()
         {
@@ -61,12 +96,12 @@ namespace RetroLauncher.Core.Models
 
     public class GlobalHotkeysConfig
     {
-        public string Pause { get; set; } = "P";
+        public string Pause { get; set; } = "Escape";
         public string SaveState { get; set; } = "F1";
         public string LoadState { get; set; } = "F3";
         public string FastForward { get; set; } = "Tab";
         public string Screenshot { get; set; } = "F12";
-        public string ToggleMenu { get; set; } = "Escape";
+        public string ToggleMenu { get; set; } = "F10";
     }
 
     public class GlobalControllerConfig

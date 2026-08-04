@@ -5,6 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using RetroLauncher.Core.Abstractions;
+using RetroLauncher.Core.Enums;
+using RetroLauncher.Core.Models;
 
 namespace RetroLauncher.Emulators.Adapters
 {
@@ -179,9 +182,43 @@ namespace RetroLauncher.Emulators.Adapters
                     sec["EnableRumble"] = player.EnableRumble.ToString();
                     sec["RumbleStrength"] = player.RumbleStrength.ToString("F2");
 
-                    foreach (var kvp in player.ButtonMappings)
+                    if (string.Equals(player.ControllerType, "Keyboard", StringComparison.OrdinalIgnoreCase))
                     {
-                        sec[kvp.Key] = kvp.Value;
+                        var kbList = player.GetKeyboardMappings();
+                        foreach (var km in kbList)
+                        {
+                            if (km.Key.HasValue)
+                            {
+                                string targetKeyName = km.Action switch
+                                {
+                                    VirtualControllerAction.DPadUp => "Up",
+                                    VirtualControllerAction.DPadDown => "Down",
+                                    VirtualControllerAction.DPadLeft => "Left",
+                                    VirtualControllerAction.DPadRight => "Right",
+                                    VirtualControllerAction.FaceSouth => "Cross",
+                                    VirtualControllerAction.FaceEast => "Circle",
+                                    VirtualControllerAction.FaceWest => "Square",
+                                    VirtualControllerAction.FaceNorth => "Triangle",
+                                    VirtualControllerAction.L1 => "L1",
+                                    VirtualControllerAction.R1 => "R1",
+                                    VirtualControllerAction.L2 => "L2",
+                                    VirtualControllerAction.R2 => "R2",
+                                    VirtualControllerAction.L3 => "L3",
+                                    VirtualControllerAction.R3 => "R3",
+                                    VirtualControllerAction.Start => "Start",
+                                    VirtualControllerAction.Select => "Select",
+                                    _ => km.Action.ToString()
+                                };
+                                sec[targetKeyName] = $"Keyboard/{km.Key.Value}";
+                            }
+                        }
+                    }
+                    else
+                    {
+                        foreach (var kvp in player.ButtonMappings)
+                        {
+                            sec[kvp.Key] = kvp.Value;
+                        }
                     }
                 }
 

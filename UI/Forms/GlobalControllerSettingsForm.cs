@@ -2,7 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
+using RetroLauncher.Core.Enums;
+using RetroLauncher.Core.Models;
+using RetroLauncher.Services.Controllers;
 using RetroLauncher.UI.Controls;
 using RetroLauncher.UI.Theme;
 
@@ -12,6 +16,38 @@ namespace RetroLauncher.UI.Forms
     {
         private ComboBox cbPlayerSelect = null!;
         private ComboBox cbControllerType = null!;
+        private CheckBox chkAutoSyncOnLaunch = null!;
+
+        // Preset UI
+        private Panel pnlKeyboardPresetBar = null!;
+        private ComboBox cbPresetSelect = null!;
+        private ModernButton btnApplyPreset = null!;
+        private ModernButton btnResetPreset = null!;
+        private ModernButton btnClearMappings = null!;
+
+        // Test Input Banner
+        private Panel pnlTestModeBanner = null!;
+        private Label lblTestInputStatus = null!;
+        private ModernButton btnToggleTestMode = null!;
+        private bool _isTestModeActive = false;
+
+        // Conflict Warning Banner
+        private Panel pnlWarningBanner = null!;
+        private Label lblWarningText = null!;
+
+        // Tabs
+        private TabControl tcMain = null!;
+        private TabPage tpKeyboard = null!;
+        private TabPage tpGamepad = null!;
+        private TabPage tpHotkeys = null!;
+
+        // Key Capture Mapping Dictionary for Gameplay Actions
+        private Dictionary<VirtualControllerAction, KeyCaptureControl> _keyboardControls = new();
+
+        // Key Capture Mapping Dictionary for Hotkeys
+        private Dictionary<VirtualControllerAction, KeyCaptureControl> _hotkeyControls = new();
+
+        // Gamepad Controls
         private TextBox tbDeviceGuid = null!;
         private NumericUpDown nudDeadzone = null!;
         private NumericUpDown nudSensitivity = null!;
@@ -22,40 +58,33 @@ namespace RetroLauncher.UI.Forms
         private CheckBox chkInvertRY = null!;
         private CheckBox chkEnableRumble = null!;
         private NumericUpDown nudRumbleStrength = null!;
-        private CheckBox chkAutoSyncOnLaunch = null!;
+        private Dictionary<string, TextBox> _gamepadMappingInputs = new(StringComparer.OrdinalIgnoreCase);
 
-        // Hotkeys
-        private TextBox tbHotkeyPause = null!;
-        private TextBox tbHotkeySaveState = null!;
-        private TextBox tbHotkeyLoadState = null!;
-        private TextBox tbHotkeyFastForward = null!;
-        private TextBox tbHotkeyScreenshot = null!;
-        private TextBox tbHotkeyMenu = null!;
-
-        // Mapping Inputs Cache
-        private Dictionary<string, TextBox> _mappingInputs = new(StringComparer.OrdinalIgnoreCase);
-
+        // Action Buttons
         private ModernButton btnSave = null!;
         private ModernButton btnSyncAll = null!;
 
         private int _selectedPlayerIndex = 1;
+        private bool _isDirty = false;
 
         public GlobalControllerSettingsForm()
         {
             InitializeComponent();
             SetupFormLayout();
             LoadConfigToUI();
+            this.KeyPreview = true;
+            this.KeyDown += GlobalControllerSettingsForm_KeyDown;
         }
 
         private void InitializeComponent()
         {
-            this.Text = "Global Controller Settings";
-            this.Size = new Size(880, 640);
-            this.MinimumSize = new Size(800, 560);
+            this.Text = "🕹️ Master Controller & Keyboard Configuration";
+            this.Size = new Size(960, 720);
+            this.MinimumSize = new Size(840, 620);
             this.StartPosition = FormStartPosition.CenterParent;
             this.BackColor = AppTheme.Current.Colors.Background;
             this.ForeColor = AppTheme.Current.Colors.TextPrimary;
-            this.Padding = new Padding(24, 16, 24, 16);
+            this.Padding = new Padding(16);
             this.AutoScroll = true;
         }
 
@@ -63,114 +92,403 @@ namespace RetroLauncher.UI.Forms
         {
             this.Controls.Clear();
 
-            var tlpMain = new TableLayoutPanel
+            var pnlMain = new TableLayoutPanel
             {
-                Dock = DockStyle.Top,
-                AutoSize = true,
+                Dock = DockStyle.Fill,
                 ColumnCount = 1,
                 RowCount = 5,
                 Margin = new Padding(0)
             };
-            tlpMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlMain.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Header
+            pnlMain.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Test Banner
+            pnlMain.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Warning Banner
+            pnlMain.RowStyles.Add(new RowStyle(SizeType.Percent, 100F)); // Tabs
+            pnlMain.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Action buttons
 
-            // Header Section
-            var pnlHeader = new Panel { Dock = DockStyle.Top, Height = 44, Margin = new Padding(0, 0, 0, 16) };
-            Label lblTitle = new Label
+            // 1. Top Header Row (Player Select, Controller Type, AutoSync, Test Mode Toggle)
+            var pnlHeader = new Panel { Dock = DockStyle.Top, Height = 50, Margin = new Padding(0, 0, 0, 8) };
+
+            Label lblPlayer = new Label
             {
-                Text = "🕹️ Master Controller Configuration",
-                Font = AppTheme.Current.Fonts.TitleSmall,
+                Text = "Player:",
+                Font = new Font(AppTheme.Current.Fonts.BodySmall, FontStyle.Bold),
                 ForeColor = AppTheme.Current.Colors.TextPrimary,
-                Location = new Point(0, 8),
+                Location = new Point(0, 14),
                 AutoSize = true
             };
-            chkAutoSyncOnLaunch = new CheckBox
-            {
-                Text = "Automatically sync global profile to emulators on launch",
-                Font = AppTheme.Current.Fonts.BodySmall,
-                ForeColor = AppTheme.Current.Colors.TextSecondary,
-                Location = new Point(360, 10),
-                AutoSize = true
-            };
-            pnlHeader.Controls.Add(lblTitle);
-            pnlHeader.Controls.Add(chkAutoSyncOnLaunch);
-            tlpMain.Controls.Add(pnlHeader, 0, 0);
-
-            // Player Selector Row
-            var pnlPlayer = new Panel { Dock = DockStyle.Top, Height = 36, Margin = new Padding(0, 0, 0, 16) };
-            Label lblPlayer = new Label { Text = "Select Player Profile:", Font = AppTheme.Current.Fonts.BodyMedium, ForeColor = AppTheme.Current.Colors.TextPrimary, Location = new Point(0, 6), AutoSize = true };
             cbPlayerSelect = new ComboBox
             {
-                Location = new Point(160, 4),
-                Size = new Size(180, 26),
+                Location = new Point(55, 10),
+                Size = new Size(110, 26),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 FlatStyle = FlatStyle.Flat,
                 BackColor = AppTheme.Current.Colors.Surface,
-                ForeColor = AppTheme.Current.Colors.TextPrimary
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Font = AppTheme.Current.Fonts.BodySmall
             };
             cbPlayerSelect.Items.AddRange(new object[] { "Player 1", "Player 2", "Player 3", "Player 4" });
             cbPlayerSelect.SelectedIndex = 0;
             cbPlayerSelect.SelectedIndexChanged += cbPlayerSelect_SelectedIndexChanged;
-            pnlPlayer.Controls.Add(lblPlayer);
-            pnlPlayer.Controls.Add(cbPlayerSelect);
-            tlpMain.Controls.Add(pnlPlayer, 0, 1);
 
-            // Split Grid (Left: Calibration & Hotkeys, Right: Button Mappings)
-            var tlpSplit = new TableLayoutPanel
+            Label lblType = new Label
+            {
+                Text = "Type:",
+                Font = new Font(AppTheme.Current.Fonts.BodySmall, FontStyle.Bold),
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Location = new Point(180, 14),
+                AutoSize = true
+            };
+            cbControllerType = new ComboBox
+            {
+                Location = new Point(225, 10),
+                Size = new Size(120, 26),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = AppTheme.Current.Colors.Surface,
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Font = AppTheme.Current.Fonts.BodySmall
+            };
+            cbControllerType.Items.AddRange(new object[] { "Keyboard", "XInput", "DirectInput", "Disabled" });
+            cbControllerType.SelectedIndexChanged += cbControllerType_SelectedIndexChanged;
+
+            chkAutoSyncOnLaunch = new CheckBox
+            {
+                Text = "Auto-sync to emulators on launch",
+                Font = AppTheme.Current.Fonts.BodySmall,
+                ForeColor = AppTheme.Current.Colors.TextSecondary,
+                Location = new Point(365, 12),
+                AutoSize = true
+            };
+
+            btnToggleTestMode = new ModernButton
+            {
+                Text = "🧪 Test Input Mode",
+                Location = new Point(730, 8),
+                Size = new Size(180, 32),
+                IsPrimary = false
+            };
+            btnToggleTestMode.Click += btnToggleTestMode_Click;
+
+            pnlHeader.Controls.Add(lblPlayer);
+            pnlHeader.Controls.Add(cbPlayerSelect);
+            pnlHeader.Controls.Add(lblType);
+            pnlHeader.Controls.Add(cbControllerType);
+            pnlHeader.Controls.Add(chkAutoSyncOnLaunch);
+            pnlHeader.Controls.Add(btnToggleTestMode);
+            pnlMain.Controls.Add(pnlHeader, 0, 0);
+
+            // 2. Test Mode Banner (Hidden by default)
+            pnlTestModeBanner = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 36,
+                BackColor = Color.FromArgb(40, 99, 102, 241),
+                Margin = new Padding(0, 0, 0, 8),
+                Visible = false
+            };
+            lblTestInputStatus = new Label
+            {
+                Text = "🎮 TEST MODE ACTIVE: Press physical keys on your keyboard. Press ESC or click Test Input Mode to exit.",
+                Font = new Font(AppTheme.Current.Fonts.BodySmall, FontStyle.Bold),
+                ForeColor = Color.FromArgb(165, 180, 252),
+                Location = new Point(12, 8),
+                AutoSize = true
+            };
+            pnlTestModeBanner.Controls.Add(lblTestInputStatus);
+            pnlMain.Controls.Add(pnlTestModeBanner, 0, 1);
+
+            // 3. Conflict Warning Banner (Hidden by default)
+            pnlWarningBanner = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 32,
+                BackColor = Color.FromArgb(40, 239, 68, 68),
+                Margin = new Padding(0, 0, 0, 8),
+                Visible = false
+            };
+            lblWarningText = new Label
+            {
+                Text = "⚠️ Duplicate key assignment detected!",
+                Font = new Font(AppTheme.Current.Fonts.BodySmall, FontStyle.Bold),
+                ForeColor = Color.FromArgb(248, 113, 113),
+                Location = new Point(12, 6),
+                AutoSize = true
+            };
+            pnlWarningBanner.Controls.Add(lblWarningText);
+            pnlMain.Controls.Add(pnlWarningBanner, 0, 2);
+
+            // 4. Tab Control for Keyboard, Gamepad, Hotkeys
+            tcMain = new TabControl
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font(AppTheme.Current.Fonts.BodySmall, FontStyle.Bold)
+            };
+
+            tpKeyboard = new TabPage("⌨️ Keyboard Mappings")
+            {
+                BackColor = AppTheme.Current.Colors.Background,
+                Padding = new Padding(12),
+                AutoScroll = true
+            };
+
+            tpGamepad = new TabPage("🎮 Gamepad & Calibration")
+            {
+                BackColor = AppTheme.Current.Colors.Background,
+                Padding = new Padding(12),
+                AutoScroll = true
+            };
+
+            tpHotkeys = new TabPage("⚡ Global Hotkeys")
+            {
+                BackColor = AppTheme.Current.Colors.Background,
+                Padding = new Padding(12),
+                AutoScroll = true
+            };
+
+            SetupKeyboardTabPage();
+            SetupGamepadTabPage();
+            SetupHotkeysTabPage();
+
+            tcMain.TabPages.Add(tpKeyboard);
+            tcMain.TabPages.Add(tpGamepad);
+            tcMain.TabPages.Add(tpHotkeys);
+
+            pnlMain.Controls.Add(tcMain, 0, 3);
+
+            // 5. Action Buttons Footer Row
+            var pnlFooter = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Margin = new Padding(0, 12, 0, 0),
+                FlowDirection = FlowDirection.LeftToRight
+            };
+
+            btnSave = new ModernButton
+            {
+                Text = "💾 Save & Apply Profile",
+                Size = new Size(190, 36),
+                IsPrimary = true,
+                Margin = new Padding(0, 0, 12, 0)
+            };
+            btnSave.Click += btnSave_Click;
+
+            btnSyncAll = new ModernButton
+            {
+                Text = "🔄 Sync All Emulators",
+                Size = new Size(180, 36),
+                IsPrimary = false,
+                Margin = new Padding(0)
+            };
+            btnSyncAll.Click += btnSyncAll_Click;
+
+            pnlFooter.Controls.Add(btnSave);
+            pnlFooter.Controls.Add(btnSyncAll);
+
+            pnlMain.Controls.Add(pnlFooter, 0, 4);
+
+            this.Controls.Add(pnlMain);
+        }
+
+        private void SetupKeyboardTabPage()
+        {
+            tpKeyboard.Controls.Clear();
+
+            var pnlLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = new Padding(0)
+            };
+            pnlLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            // Preset Bar
+            pnlKeyboardPresetBar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 44,
+                Margin = new Padding(0, 0, 0, 12)
+            };
+
+            Label lblPreset = new Label
+            {
+                Text = "Keyboard Preset:",
+                Font = new Font(AppTheme.Current.Fonts.BodySmall, FontStyle.Bold),
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Location = new Point(0, 12),
+                AutoSize = true
+            };
+
+            cbPresetSelect = new ComboBox
+            {
+                Location = new Point(125, 8),
+                Size = new Size(150, 26),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = AppTheme.Current.Colors.Surface,
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Font = AppTheme.Current.Fonts.BodySmall
+            };
+            cbPresetSelect.Items.AddRange(KeyboardPresetCatalog.GetPresetNames().ToArray());
+            cbPresetSelect.SelectedIndex = 0;
+
+            btnApplyPreset = new ModernButton
+            {
+                Text = "Apply Preset",
+                Location = new Point(285, 6),
+                Size = new Size(110, 30),
+                IsPrimary = false
+            };
+            btnApplyPreset.Click += (s, e) => ApplySelectedPreset();
+
+            btnResetPreset = new ModernButton
+            {
+                Text = "Reset Layout",
+                Location = new Point(405, 6),
+                Size = new Size(110, 30),
+                IsPrimary = false
+            };
+            btnResetPreset.Click += (s, e) => ApplySelectedPreset();
+
+            btnClearMappings = new ModernButton
+            {
+                Text = "Clear All",
+                Location = new Point(525, 6),
+                Size = new Size(90, 30),
+                IsPrimary = false
+            };
+            btnClearMappings.Click += (s, e) => ClearAllKeyboardMappings();
+
+            pnlKeyboardPresetBar.Controls.Add(lblPreset);
+            pnlKeyboardPresetBar.Controls.Add(cbPresetSelect);
+            pnlKeyboardPresetBar.Controls.Add(btnApplyPreset);
+            pnlKeyboardPresetBar.Controls.Add(btnResetPreset);
+            pnlKeyboardPresetBar.Controls.Add(btnClearMappings);
+
+            pnlLayout.Controls.Add(pnlKeyboardPresetBar, 0, 0);
+
+            // 2-Column Responsive Key Capture Grid for VirtualControllerActions
+            var tlpGrid = new TableLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 ColumnCount = 2,
-                RowCount = 1,
-                Margin = new Padding(0, 0, 0, 16)
+                Margin = new Padding(0)
             };
-            tlpSplit.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-            tlpSplit.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tlpGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            tlpGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
 
-            // Left Stack: Calibration + Hotkeys
-            var pnlLeftStack = new FlowLayoutPanel
+            var actions = new[]
+            {
+                VirtualControllerAction.DPadUp, VirtualControllerAction.DPadDown,
+                VirtualControllerAction.DPadLeft, VirtualControllerAction.DPadRight,
+                VirtualControllerAction.LeftStickUp, VirtualControllerAction.LeftStickDown,
+                VirtualControllerAction.LeftStickLeft, VirtualControllerAction.LeftStickRight,
+                VirtualControllerAction.FaceSouth, VirtualControllerAction.FaceEast,
+                VirtualControllerAction.FaceWest, VirtualControllerAction.FaceNorth,
+                VirtualControllerAction.L1, VirtualControllerAction.R1,
+                VirtualControllerAction.L2, VirtualControllerAction.R2,
+                VirtualControllerAction.L3, VirtualControllerAction.R3,
+                VirtualControllerAction.Start, VirtualControllerAction.Select
+            };
+
+            _keyboardControls.Clear();
+            int col = 0, row = 0;
+
+            foreach (var action in actions)
+            {
+                Panel pnlRow = new Panel
+                {
+                    Height = 34,
+                    Dock = DockStyle.Top,
+                    Margin = new Padding(4)
+                };
+
+                Label lblAction = new Label
+                {
+                    Text = KeyboardPresetCatalog.GetActionDisplayName(action) + ":",
+                    Font = AppTheme.Current.Fonts.BodySmall,
+                    ForeColor = AppTheme.Current.Colors.TextPrimary,
+                    Location = new Point(0, 8),
+                    Size = new Size(160, 20)
+                };
+
+                KeyCaptureControl kcc = new KeyCaptureControl
+                {
+                    Action = action,
+                    Location = new Point(165, 3),
+                    Size = new Size(170, 26)
+                };
+                kcc.KeyCaptured += (s, key) =>
+                {
+                    _isDirty = true;
+                    ValidateDuplicateKeys();
+                };
+
+                _keyboardControls[action] = kcc;
+
+                pnlRow.Controls.Add(lblAction);
+                pnlRow.Controls.Add(kcc);
+
+                tlpGrid.Controls.Add(pnlRow, col, row);
+
+                col++;
+                if (col >= 2)
+                {
+                    col = 0;
+                    row++;
+                }
+            }
+
+            pnlLayout.Controls.Add(tlpGrid, 0, 1);
+            tpKeyboard.Controls.Add(pnlLayout);
+        }
+
+        private void SetupGamepadTabPage()
+        {
+            tpGamepad.Controls.Clear();
+
+            var pnlMain = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 FlowDirection = FlowDirection.TopDown,
                 WrapContents = false,
-                Margin = new Padding(0, 0, 8, 0)
+                Margin = new Padding(0)
             };
 
             GroupBox gbCalibration = new GroupBox
             {
-                Text = "Controller & Calibration",
-                Size = new Size(380, 270),
+                Text = "Controller Device & Calibration",
+                Size = new Size(420, 250),
                 ForeColor = AppTheme.Current.Colors.TextPrimary,
                 Font = AppTheme.Current.Fonts.BodySmall,
                 Margin = new Padding(0, 0, 0, 12)
             };
 
-            Label lblType = new Label { Text = "Type:", Location = new Point(15, 25), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            cbControllerType = new ComboBox { Location = new Point(140, 22), Size = new Size(210, 23), DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            cbControllerType.Items.AddRange(new object[] { "XInput", "DirectInput", "Keyboard", "Disabled" });
+            Label lblDevice = new Label { Text = "Device Name:", Location = new Point(15, 30), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            tbDeviceGuid = new TextBox { Location = new Point(140, 27), Size = new Size(240, 23), BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            Label lblDevice = new Label { Text = "Device Name:", Location = new Point(15, 55), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            tbDeviceGuid = new TextBox { Location = new Point(140, 52), Size = new Size(210, 23), BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            Label lblDeadzone = new Label { Text = "Deadzone:", Location = new Point(15, 60), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            nudDeadzone = new NumericUpDown { Location = new Point(140, 57), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.00m, Maximum = 0.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            Label lblDeadzone = new Label { Text = "Deadzone:", Location = new Point(15, 85), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            nudDeadzone = new NumericUpDown { Location = new Point(140, 82), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.00m, Maximum = 0.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            Label lblSensitivity = new Label { Text = "Sensitivity:", Location = new Point(15, 90), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            nudSensitivity = new NumericUpDown { Location = new Point(140, 87), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.10m, Minimum = 0.50m, Maximum = 2.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            Label lblSensitivity = new Label { Text = "Sensitivity:", Location = new Point(15, 115), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            nudSensitivity = new NumericUpDown { Location = new Point(140, 112), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.10m, Minimum = 0.50m, Maximum = 2.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            Label lblTrigger = new Label { Text = "Trigger Threshold:", Location = new Point(15, 120), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            nudTriggerThreshold = new NumericUpDown { Location = new Point(140, 117), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.00m, Maximum = 0.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            Label lblTrigger = new Label { Text = "Trigger Threshold:", Location = new Point(15, 145), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            nudTriggerThreshold = new NumericUpDown { Location = new Point(140, 142), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.05m, Minimum = 0.00m, Maximum = 0.50m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            chkInvertLX = new CheckBox { Text = "Invert Left X", Location = new Point(15, 155), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            chkInvertLY = new CheckBox { Text = "Invert Left Y", Location = new Point(140, 155), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            chkInvertRX = new CheckBox { Text = "Invert Right X", Location = new Point(15, 180), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            chkInvertRY = new CheckBox { Text = "Invert Right Y", Location = new Point(140, 180), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            chkInvertLX = new CheckBox { Text = "Invert Left X", Location = new Point(15, 175), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            chkInvertLY = new CheckBox { Text = "Invert Left Y", Location = new Point(140, 175), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            chkInvertRX = new CheckBox { Text = "Invert Right X", Location = new Point(15, 200), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            chkInvertRY = new CheckBox { Text = "Invert Right Y", Location = new Point(140, 200), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            chkEnableRumble = new CheckBox { Text = "Enable Rumble", Location = new Point(15, 210), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            Label lblRumbleStr = new Label { Text = "Strength:", Location = new Point(140, 210), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
+            nudRumbleStrength = new NumericUpDown { Location = new Point(210, 207), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.10m, Minimum = 0.00m, Maximum = 1.00m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
 
-            chkEnableRumble = new CheckBox { Text = "Enable Rumble", Location = new Point(15, 230), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            Label lblRumbleStr = new Label { Text = "Strength:", Location = new Point(140, 230), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            nudRumbleStrength = new NumericUpDown { Location = new Point(210, 227), Size = new Size(90, 23), DecimalPlaces = 2, Increment = 0.10m, Minimum = 0.00m, Maximum = 1.00m, BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
-
-            gbCalibration.Controls.Add(lblType); gbCalibration.Controls.Add(cbControllerType);
             gbCalibration.Controls.Add(lblDevice); gbCalibration.Controls.Add(tbDeviceGuid);
             gbCalibration.Controls.Add(lblDeadzone); gbCalibration.Controls.Add(nudDeadzone);
             gbCalibration.Controls.Add(lblSensitivity); gbCalibration.Controls.Add(nudSensitivity);
@@ -178,89 +496,79 @@ namespace RetroLauncher.UI.Forms
             gbCalibration.Controls.Add(chkInvertLX); gbCalibration.Controls.Add(chkInvertLY);
             gbCalibration.Controls.Add(chkInvertRX); gbCalibration.Controls.Add(chkInvertRY);
             gbCalibration.Controls.Add(chkEnableRumble); gbCalibration.Controls.Add(lblRumbleStr); gbCalibration.Controls.Add(nudRumbleStrength);
-            pnlLeftStack.Controls.Add(gbCalibration);
+
+            pnlMain.Controls.Add(gbCalibration);
+
+            tpGamepad.Controls.Add(pnlMain);
+        }
+
+        private void SetupHotkeysTabPage()
+        {
+            tpHotkeys.Controls.Clear();
+
+            var pnlMain = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                Margin = new Padding(0)
+            };
 
             GroupBox gbHotkeys = new GroupBox
             {
-                Text = "Global Hotkeys",
-                Size = new Size(380, 210),
+                Text = "Global Launcher Hotkeys",
+                Size = new Size(450, 260),
                 ForeColor = AppTheme.Current.Colors.TextPrimary,
                 Font = AppTheme.Current.Fonts.BodySmall
             };
 
-            tbHotkeyPause = AddHotkeyRow(gbHotkeys, "Pause:", "P", 25);
-            tbHotkeySaveState = AddHotkeyRow(gbHotkeys, "Save State:", "F1", 55);
-            tbHotkeyLoadState = AddHotkeyRow(gbHotkeys, "Load State:", "F3", 85);
-            tbHotkeyFastForward = AddHotkeyRow(gbHotkeys, "Fast Forward:", "Tab", 115);
-            tbHotkeyScreenshot = AddHotkeyRow(gbHotkeys, "Screenshot:", "F12", 145);
-            tbHotkeyMenu = AddHotkeyRow(gbHotkeys, "Toggle Menu:", "Escape", 175);
-            pnlLeftStack.Controls.Add(gbHotkeys);
-
-            tlpSplit.Controls.Add(pnlLeftStack, 0, 0);
-
-            // Right Stack: Button Mappings
-            GroupBox gbMappings = new GroupBox
+            var hotkeyActions = new[]
             {
-                Text = "Button & Direction Mappings",
-                Dock = DockStyle.Fill,
-                ForeColor = AppTheme.Current.Colors.TextPrimary,
-                Font = AppTheme.Current.Fonts.BodySmall,
-                Margin = new Padding(8, 0, 0, 0)
+                (VirtualControllerAction.Pause, "Pause Launcher:"),
+                (VirtualControllerAction.SaveState, "Save State:"),
+                (VirtualControllerAction.LoadState, "Load State:"),
+                (VirtualControllerAction.FastForward, "Fast Forward:"),
+                (VirtualControllerAction.Screenshot, "Screenshot:"),
+                (VirtualControllerAction.ToggleMenu, "Toggle Menu:")
             };
 
-            Panel pnlMapScroll = new Panel
+            _hotkeyControls.Clear();
+            int y = 25;
+
+            foreach (var (action, label) in hotkeyActions)
             {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(8),
-                AutoScroll = true
-            };
+                Label lbl = new Label
+                {
+                    Text = label,
+                    Location = new Point(15, y + 4),
+                    AutoSize = true,
+                    ForeColor = AppTheme.Current.Colors.TextPrimary,
+                    Font = AppTheme.Current.Fonts.BodySmall
+                };
 
-            var defaultMappings = PlayerControllerConfig.GetDefaultButtonMappings();
-            int yPos = 5;
-            foreach (var kvp in defaultMappings)
-            {
-                Label lblKey = new Label { Text = kvp.Key.Replace("_", " "), Location = new Point(5, yPos + 3), Size = new Size(130, 20), ForeColor = AppTheme.Current.Colors.TextPrimary, Font = AppTheme.Current.Fonts.BodySmall };
-                TextBox tbInput = new TextBox { Text = kvp.Value, Location = new Point(140, yPos), Size = new Size(180, 22), BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
+                KeyCaptureControl kcc = new KeyCaptureControl
+                {
+                    Action = action,
+                    Location = new Point(180, y),
+                    Size = new Size(180, 26)
+                };
+                kcc.KeyCaptured += (s, k) =>
+                {
+                    _isDirty = true;
+                    ValidateDuplicateKeys();
+                };
 
-                pnlMapScroll.Controls.Add(lblKey);
-                pnlMapScroll.Controls.Add(tbInput);
-                _mappingInputs[kvp.Key] = tbInput;
+                _hotkeyControls[action] = kcc;
 
-                yPos += 28;
+                gbHotkeys.Controls.Add(lbl);
+                gbHotkeys.Controls.Add(kcc);
+
+                y += 36;
             }
-            gbMappings.Controls.Add(pnlMapScroll);
-            tlpSplit.Controls.Add(gbMappings, 1, 0);
 
-            tlpMain.Controls.Add(tlpSplit, 0, 2);
-
-            // Action Buttons Row
-            var flpActionButtons = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                Margin = new Padding(0, 8, 0, 0)
-            };
-
-            btnSave = new ModernButton { Text = "💾 Save & Apply Profile", Size = new Size(180, 36), IsPrimary = true, Margin = new Padding(0, 0, 12, 0) };
-            btnSave.Click += btnSave_Click;
-
-            btnSyncAll = new ModernButton { Text = "🔄 Sync All Emulators", Size = new Size(180, 36), IsPrimary = false, Margin = new Padding(0) };
-            btnSyncAll.Click += btnSyncAll_Click;
-
-            flpActionButtons.Controls.Add(btnSave);
-            flpActionButtons.Controls.Add(btnSyncAll);
-            tlpMain.Controls.Add(flpActionButtons, 0, 3);
-
-            this.Controls.Add(tlpMain);
-        }
-
-        private TextBox AddHotkeyRow(GroupBox gb, string labelText, string defaultValue, int y)
-        {
-            Label lbl = new Label { Text = labelText, Location = new Point(15, y + 3), AutoSize = true, ForeColor = AppTheme.Current.Colors.TextPrimary, Font = AppTheme.Current.Fonts.BodySmall };
-            TextBox tb = new TextBox { Text = defaultValue, Location = new Point(140, y), Size = new Size(210, 22), BackColor = AppTheme.Current.Colors.Surface, ForeColor = AppTheme.Current.Colors.TextPrimary };
-            gb.Controls.Add(lbl);
-            gb.Controls.Add(tb);
-            return tb;
+            pnlMain.Controls.Add(gbHotkeys);
+            tpHotkeys.Controls.Add(pnlMain);
         }
 
         private void LoadConfigToUI()
@@ -268,12 +576,13 @@ namespace RetroLauncher.UI.Forms
             var config = GlobalControllerConfigManager.Instance.Config;
             chkAutoSyncOnLaunch.Checked = config.AutoSyncOnLaunch;
 
-            tbHotkeyPause.Text = config.Hotkeys.Pause;
-            tbHotkeySaveState.Text = config.Hotkeys.SaveState;
-            tbHotkeyLoadState.Text = config.Hotkeys.LoadState;
-            tbHotkeyFastForward.Text = config.Hotkeys.FastForward;
-            tbHotkeyScreenshot.Text = config.Hotkeys.Screenshot;
-            tbHotkeyMenu.Text = config.Hotkeys.ToggleMenu;
+            // Load Hotkeys into Hotkey Controls
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.Pause, out var kccPause) && Enum.TryParse(config.Hotkeys.Pause, out Keys kPause)) kccPause.SelectedKey = kPause;
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.SaveState, out var kccSave) && Enum.TryParse(config.Hotkeys.SaveState, out Keys kSave)) kccSave.SelectedKey = kSave;
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.LoadState, out var kccLoad) && Enum.TryParse(config.Hotkeys.LoadState, out Keys kLoad)) kccLoad.SelectedKey = kLoad;
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.FastForward, out var kccFF) && Enum.TryParse(config.Hotkeys.FastForward, out Keys kFF)) kccFF.SelectedKey = kFF;
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.Screenshot, out var kccSS) && Enum.TryParse(config.Hotkeys.Screenshot, out Keys kSS)) kccSS.SelectedKey = kSS;
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.ToggleMenu, out var kccMenu) && Enum.TryParse(config.Hotkeys.ToggleMenu, out Keys kMenu)) kccMenu.SelectedKey = kMenu;
 
             LoadPlayerConfig(_selectedPlayerIndex);
         }
@@ -285,6 +594,7 @@ namespace RetroLauncher.UI.Forms
 
             int typeIdx = cbControllerType.FindStringExact(player.ControllerType);
             cbControllerType.SelectedIndex = typeIdx >= 0 ? typeIdx : 0;
+
             tbDeviceGuid.Text = player.DeviceGuidOrName;
             nudDeadzone.Value = (decimal)Math.Clamp(player.Deadzone, 0.0f, 0.50f);
             nudSensitivity.Value = (decimal)Math.Clamp(player.Sensitivity, 0.50f, 2.50f);
@@ -298,13 +608,25 @@ namespace RetroLauncher.UI.Forms
             chkEnableRumble.Checked = player.EnableRumble;
             nudRumbleStrength.Value = (decimal)Math.Clamp(player.RumbleStrength, 0.0f, 1.00f);
 
-            foreach (var kvp in _mappingInputs)
+            // Load Keyboard Mappings
+            var kbMappings = player.GetKeyboardMappings();
+            if (!kbMappings.Any(m => m.Key.HasValue))
             {
-                if (player.ButtonMappings.TryGetValue(kvp.Key, out string? val))
+                // Fallback to Modern WASD if empty
+                kbMappings = KeyboardPresetCatalog.GetModernWASDPreset();
+            }
+
+            foreach (var mapping in kbMappings)
+            {
+                if (_keyboardControls.TryGetValue(mapping.Action, out var kcc))
                 {
-                    kvp.Value.Text = val;
+                    kcc.SelectedKey = mapping.Key;
                 }
             }
+
+            UpdateControllerTypeVisibility();
+            ValidateDuplicateKeys();
+            _isDirty = false;
         }
 
         private void SavePlayerConfig(int playerIndex)
@@ -317,7 +639,7 @@ namespace RetroLauncher.UI.Forms
                 config.Players.Add(player);
             }
 
-            player.ControllerType = cbControllerType.SelectedItem?.ToString() ?? "XInput";
+            player.ControllerType = cbControllerType.SelectedItem?.ToString() ?? "Keyboard";
             player.DeviceGuidOrName = tbDeviceGuid.Text;
             player.Deadzone = (float)nudDeadzone.Value;
             player.Sensitivity = (float)nudSensitivity.Value;
@@ -331,17 +653,159 @@ namespace RetroLauncher.UI.Forms
             player.EnableRumble = chkEnableRumble.Checked;
             player.RumbleStrength = (float)nudRumbleStrength.Value;
 
-            foreach (var kvp in _mappingInputs)
+            // Save Keyboard Mappings
+            var list = new List<KeyboardMapping>();
+            foreach (var kvp in _keyboardControls)
             {
-                player.ButtonMappings[kvp.Key] = kvp.Value.Text;
+                list.Add(new KeyboardMapping { Action = kvp.Key, Key = kvp.Value.SelectedKey });
+            }
+            player.SetKeyboardMappings(list);
+        }
+
+        private void UpdateControllerTypeVisibility()
+        {
+            string selectedType = cbControllerType.SelectedItem?.ToString() ?? "Keyboard";
+            bool isKeyboard = string.Equals(selectedType, "Keyboard", StringComparison.OrdinalIgnoreCase);
+
+            pnlKeyboardPresetBar.Visible = isKeyboard;
+            if (isKeyboard)
+            {
+                tcMain.SelectedTab = tpKeyboard;
+            }
+        }
+
+        private void ApplySelectedPreset()
+        {
+            string selectedPreset = cbPresetSelect.SelectedItem?.ToString() ?? KeyboardPresetCatalog.ModernWASD;
+            var presetMappings = KeyboardPresetCatalog.GetPresetMappings(selectedPreset);
+
+            foreach (var pm in presetMappings)
+            {
+                if (_keyboardControls.TryGetValue(pm.Action, out var kcc))
+                {
+                    kcc.SelectedKey = pm.Key;
+                }
+            }
+
+            ValidateDuplicateKeys();
+            _isDirty = true;
+            ToastNotification.ShowToast(this, $"Applied preset '{selectedPreset}'.", StatusType.Info);
+        }
+
+        private void ClearAllKeyboardMappings()
+        {
+            foreach (var kcc in _keyboardControls.Values)
+            {
+                kcc.SelectedKey = null;
+            }
+
+            ValidateDuplicateKeys();
+            _isDirty = true;
+        }
+
+        private void ValidateDuplicateKeys()
+        {
+            var keyCounts = new Dictionary<Keys, List<VirtualControllerAction>>();
+
+            foreach (var kvp in _keyboardControls)
+            {
+                if (kvp.Value.SelectedKey.HasValue)
+                {
+                    Keys k = kvp.Value.SelectedKey.Value;
+                    if (!keyCounts.ContainsKey(k)) keyCounts[k] = new List<VirtualControllerAction>();
+                    keyCounts[k].Add(kvp.Key);
+                }
+            }
+
+            var duplicates = keyCounts.Where(kvp => kvp.Value.Count > 1).ToList();
+            if (duplicates.Any())
+            {
+                var sb = new StringBuilder("⚠️ Warning: Duplicate key mappings detected: ");
+                foreach (var dup in duplicates)
+                {
+                    sb.Append($"[{KeyCaptureControl.FormatKeyDisplay(dup.Key)}] (");
+                    sb.Append(string.Join(", ", dup.Value.Select(a => KeyboardPresetCatalog.GetActionDisplayName(a))));
+                    sb.Append(") ");
+                }
+
+                lblWarningText.Text = sb.ToString();
+                pnlWarningBanner.Visible = true;
+            }
+            else
+            {
+                pnlWarningBanner.Visible = false;
             }
         }
 
         private void cbPlayerSelect_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            SavePlayerConfig(_selectedPlayerIndex);
+            if (_isDirty)
+            {
+                var result = MessageBox.Show(this, "Save changes to the current player profile before switching?", "Unsaved Changes", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                if (result == DialogResult.Cancel)
+                {
+                    cbPlayerSelect.SelectedIndex = _selectedPlayerIndex - 1;
+                    return;
+                }
+                if (result == DialogResult.Yes)
+                {
+                    SavePlayerConfig(_selectedPlayerIndex);
+                }
+            }
+
             _selectedPlayerIndex = cbPlayerSelect.SelectedIndex + 1;
             LoadPlayerConfig(_selectedPlayerIndex);
+        }
+
+        private void cbControllerType_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            UpdateControllerTypeVisibility();
+            _isDirty = true;
+        }
+
+        private void btnToggleTestMode_Click(object? sender, EventArgs e)
+        {
+            _isTestModeActive = !_isTestModeActive;
+
+            if (_isTestModeActive)
+            {
+                pnlTestModeBanner.Visible = true;
+                btnToggleTestMode.Text = "🛑 Exit Test Mode";
+                this.Focus();
+            }
+            else
+            {
+                pnlTestModeBanner.Visible = false;
+                btnToggleTestMode.Text = "🧪 Test Input Mode";
+            }
+        }
+
+        private void GlobalControllerSettingsForm_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (_isTestModeActive)
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    _isTestModeActive = false;
+                    pnlTestModeBanner.Visible = false;
+                    btnToggleTestMode.Text = "🧪 Test Input Mode";
+                    return;
+                }
+
+                Keys pressedKey = e.KeyCode;
+                var matchedControl = _keyboardControls.FirstOrDefault(kvp => kvp.Value.SelectedKey == pressedKey);
+
+                if (matchedControl.Value != null)
+                {
+                    lblTestInputStatus.Text = $"🎮 TEST MODE: Last Key Pressed: [ {KeyCaptureControl.FormatKeyDisplay(pressedKey)} ] ➔ Mapped to: {KeyboardPresetCatalog.GetActionDisplayName(matchedControl.Key)}";
+                    tcMain.SelectedTab = tpKeyboard;
+                    matchedControl.Value.Focus();
+                }
+                else
+                {
+                    lblTestInputStatus.Text = $"🎮 TEST MODE: Last Key Pressed: [ {KeyCaptureControl.FormatKeyDisplay(pressedKey)} ] ➔ [ Unassigned ]";
+                }
+            }
         }
 
         private async void btnSave_Click(object? sender, EventArgs e)
@@ -351,14 +815,15 @@ namespace RetroLauncher.UI.Forms
             var config = GlobalControllerConfigManager.Instance.Config;
             config.AutoSyncOnLaunch = chkAutoSyncOnLaunch.Checked;
 
-            config.Hotkeys.Pause = tbHotkeyPause.Text;
-            config.Hotkeys.SaveState = tbHotkeySaveState.Text;
-            config.Hotkeys.LoadState = tbHotkeyLoadState.Text;
-            config.Hotkeys.FastForward = tbHotkeyFastForward.Text;
-            config.Hotkeys.Screenshot = tbHotkeyScreenshot.Text;
-            config.Hotkeys.ToggleMenu = tbHotkeyMenu.Text;
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.Pause, out var kccPause)) config.Hotkeys.Pause = kccPause.SelectedKey?.ToString() ?? "Escape";
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.SaveState, out var kccSave)) config.Hotkeys.SaveState = kccSave.SelectedKey?.ToString() ?? "F1";
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.LoadState, out var kccLoad)) config.Hotkeys.LoadState = kccLoad.SelectedKey?.ToString() ?? "F3";
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.FastForward, out var kccFF)) config.Hotkeys.FastForward = kccFF.SelectedKey?.ToString() ?? "Tab";
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.Screenshot, out var kccSS)) config.Hotkeys.Screenshot = kccSS.SelectedKey?.ToString() ?? "F12";
+            if (_hotkeyControls.TryGetValue(VirtualControllerAction.ToggleMenu, out var kccMenu)) config.Hotkeys.ToggleMenu = kccMenu.SelectedKey?.ToString() ?? "F10";
 
             GlobalControllerConfigManager.Instance.Save();
+            _isDirty = false;
 
             btnSave.Enabled = false;
             try
@@ -367,7 +832,7 @@ namespace RetroLauncher.UI.Forms
                 int successCount = syncResults.Count(r => r.Success);
                 ToastNotification.ShowToast(
                     this,
-                    $"Global controller settings saved & applied to {successCount} / {syncResults.Count} emulators.",
+                    $"Global controller & keyboard profile saved & applied to {successCount} / {syncResults.Count} emulators.",
                     StatusType.Success);
             }
             finally
@@ -382,9 +847,9 @@ namespace RetroLauncher.UI.Forms
             try
             {
                 var syncResults = await ControllerSyncService.Instance.SyncAllEmulatorsAsync(this);
-                var sb = new System.Text.StringBuilder();
-                sb.AppendLine("Global Controller Sync Summary:");
-                sb.AppendLine("-----------------------------");
+                var sb = new StringBuilder();
+                sb.AppendLine("Global Controller & Keyboard Sync Summary:");
+                sb.AppendLine("-----------------------------------------");
 
                 foreach (var res in syncResults)
                 {

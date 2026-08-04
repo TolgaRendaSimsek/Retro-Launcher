@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using RetroLauncher.Core.Enums;
 
 namespace RetroLauncher.Emulators.Adapters
 {
@@ -182,12 +183,37 @@ namespace RetroLauncher.Emulators.Adapters
                 {
                     var player = globalConfig.Players.FirstOrDefault(p => p.PlayerIndex == i) ?? new PlayerControllerConfig { PlayerIndex = i };
                     sb.AppendLine($"Player {i} Pad:");
-                    sb.AppendLine($"  Handler: {player.ControllerType}");
-                    sb.AppendLine($"  Device: {player.DeviceGuidOrName}");
-                    sb.AppendLine($"  Left Stick Deadzone: {player.Deadzone:F2}");
-                    sb.AppendLine($"  Right Stick Deadzone: {player.Deadzone:F2}");
-                    sb.AppendLine($"  Trigger Threshold: {player.TriggerThreshold:F2}");
-                    sb.AppendLine($"  Vibration: {player.EnableRumble}");
+                    if (string.Equals(player.ControllerType, "Keyboard", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var kbList = player.GetKeyboardMappings();
+                        foreach (var km in kbList)
+                        {
+                            if (km.Key.HasValue)
+                            {
+                                string targetKeyName = km.Action switch
+                                {
+                                    VirtualControllerAction.DPadUp => "Dpad Up",
+                                    VirtualControllerAction.DPadDown => "Dpad Down",
+                                    VirtualControllerAction.DPadLeft => "Dpad Left",
+                                    VirtualControllerAction.DPadRight => "Dpad Right",
+                                    VirtualControllerAction.FaceSouth => "Cross",
+                                    VirtualControllerAction.FaceEast => "Circle",
+                                    VirtualControllerAction.FaceWest => "Square",
+                                    VirtualControllerAction.FaceNorth => "Triangle",
+                                    VirtualControllerAction.L1 => "L1",
+                                    VirtualControllerAction.R1 => "R1",
+                                    VirtualControllerAction.L2 => "L2",
+                                    VirtualControllerAction.R2 => "R2",
+                                    VirtualControllerAction.L3 => "L3",
+                                    VirtualControllerAction.R3 => "R3",
+                                    VirtualControllerAction.Start => "Start",
+                                    VirtualControllerAction.Select => "Select",
+                                    _ => km.Action.ToString()
+                                };
+                                sb.AppendLine($"  {targetKeyName}: Key_{km.Key.Value}");
+                            }
+                        }
+                    }
                 }
 
                 File.WriteAllText(configPath, sb.ToString());
