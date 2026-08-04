@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 
 namespace RetroLauncher.Core.Utilities
@@ -9,8 +10,14 @@ namespace RetroLauncher.Core.Utilities
         Version InstalledVersion { get; }
         string SemanticVersionString { get; }
         string AssemblyVersionString { get; }
+        string FileVersionString { get; }
         string InformationalVersionString { get; }
         string ExecutablePath { get; }
+        string ProcessPath { get; }
+        string BaseDirectory { get; }
+        string BuildConfiguration { get; }
+        DateTime ExecutableLastWriteTime { get; }
+        string ExecutableTimestampString { get; }
     }
 
     public class ApplicationVersionProvider : IApplicationVersionProvider
@@ -21,29 +28,56 @@ namespace RetroLauncher.Core.Utilities
         public Version InstalledVersion { get; }
         public string SemanticVersionString { get; }
         public string AssemblyVersionString { get; }
+        public string FileVersionString { get; }
         public string InformationalVersionString { get; }
         public string ExecutablePath { get; }
+        public string ProcessPath { get; }
+        public string BaseDirectory { get; }
+        public string BuildConfiguration { get; }
+        public DateTime ExecutableLastWriteTime { get; }
+        public string ExecutableTimestampString { get; }
 
         public ApplicationVersionProvider()
         {
             Assembly assembly = Assembly.GetExecutingAssembly();
             
-            // 1. Executable Path
-            ExecutablePath = Process.GetCurrentProcess().MainModule?.FileName ?? Environment.ProcessPath ?? AppContext.BaseDirectory;
+            // 1. Executable Path & Base Directory
+            ProcessPath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+            ExecutablePath = Process.GetCurrentProcess().MainModule?.FileName ?? ProcessPath;
+            BaseDirectory = AppContext.BaseDirectory;
 
-            // 2. Assembly Version
+            // 2. Executable Timestamp
+            if (File.Exists(ExecutablePath))
+            {
+                ExecutableLastWriteTime = File.GetLastWriteTime(ExecutablePath);
+            }
+            else
+            {
+                ExecutableLastWriteTime = DateTime.Now;
+            }
+            ExecutableTimestampString = ExecutableLastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // 3. Build Configuration
+#if DEBUG
+            BuildConfiguration = "Debug";
+#else
+            BuildConfiguration = "Release";
+#endif
+
+            // 4. Assembly Version
             Version asmVersion = assembly.GetName().Version ?? new Version(1, 0, 0, 0);
             AssemblyVersionString = asmVersion.ToString();
 
-            // 3. Informational Version
+            // 5. Informational Version
             var infoAttr = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>();
             InformationalVersionString = infoAttr?.InformationalVersion ?? asmVersion.ToString();
 
-            // 4. File Version
+            // 6. File Version
             var fileVersionInfo = FileVersionInfo.GetVersionInfo(ExecutablePath);
-            string fileVerStr = fileVersionInfo.ProductVersion ?? fileVersionInfo.FileVersion ?? asmVersion.ToString();
+            FileVersionString = fileVersionInfo.FileVersion ?? fileVersionInfo.ProductVersion ?? asmVersion.ToString();
+            string fileVerStr = FileVersionString;
 
-            // 5. Parse Semantic Version
+            // 7. Parse Semantic Version
             if (Version.TryParse(CleanVersionString(InformationalVersionString), out Version? parsedInfoVer))
             {
                 InstalledVersion = parsedInfoVer;

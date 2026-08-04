@@ -15,6 +15,23 @@ static class Program
 
         ApplicationConfiguration.Initialize();
         ApplicationPaths.EnsureDirectoriesExist();
+
+        var verProvider = RetroLauncher.Core.Utilities.ApplicationVersionProvider.Instance;
+        string startupMsg = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [STARTUP INFO]{Environment.NewLine}" +
+                            $"  ProcessPath: '{verProvider.ProcessPath}'{Environment.NewLine}" +
+                            $"  BaseDirectory: '{verProvider.BaseDirectory}'{Environment.NewLine}" +
+                            $"  AssemblyVersion: '{verProvider.AssemblyVersionString}'{Environment.NewLine}" +
+                            $"  FileVersion: '{verProvider.FileVersionString}'{Environment.NewLine}" +
+                            $"  BuildConfiguration: '{verProvider.BuildConfiguration}'{Environment.NewLine}" +
+                            $"  ExecutableTimestamp: '{verProvider.ExecutableTimestampString}'{Environment.NewLine}";
+
+        try
+        {
+            File.AppendAllText(Path.Combine(ApplicationPaths.LogsDir, "startup.log"), startupMsg);
+        }
+        catch { }
+
+        RetroLauncher.Services.Logging.RetroLogger.Log(startupMsg, "STARTUP");
 #if DEBUG
         ReleaseAssetSelectorTests.RunTests();
         ArchiveExtractorTests.RunTestsAsync().GetAwaiter().GetResult();

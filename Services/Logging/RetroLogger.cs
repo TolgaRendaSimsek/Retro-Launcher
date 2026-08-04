@@ -17,7 +17,11 @@ namespace RetroLauncher.Services.Logging
 
                 lock (LogLock)
                 {
-                    File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}{Environment.NewLine}");
+                    using (var fs = new FileStream(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                    using (var writer = new StreamWriter(fs))
+                    {
+                        writer.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}");
+                    }
                 }
             }
             catch { }

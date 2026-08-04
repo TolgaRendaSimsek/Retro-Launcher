@@ -131,6 +131,51 @@ namespace RetroLauncher.UI.Forms
             gbUpdates.Controls.Add(_btnOpenUpdateLogs);
 
             this.Controls.Add(gbUpdates);
+
+            // About & Executable Diagnostics Section
+            GroupBox gbAbout = new GroupBox
+            {
+                Text = "ℹ️ About Running Executable",
+                Location = new Point(15, 580),
+                Size = new Size(480, 130),
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                Font = AppTheme.Current.Fonts.BodySmall
+            };
+
+            var ver = ApplicationVersionProvider.Instance;
+            Label lblAboutVer = new Label
+            {
+                Text = $"Version: {ver.SemanticVersionString} | Build Config: {ver.BuildConfiguration}",
+                Location = new Point(15, 25),
+                AutoSize = true,
+                Font = new Font(AppTheme.Current.Fonts.BodySmall, FontStyle.Bold),
+                ForeColor = AppTheme.Current.Colors.AccentPrimary
+            };
+            gbAbout.Controls.Add(lblAboutVer);
+
+            Label lblAboutTimestamp = new Label
+            {
+                Text = $"Executable Last Modified: {ver.ExecutableTimestampString}",
+                Location = new Point(15, 48),
+                AutoSize = true,
+                ForeColor = AppTheme.Current.Colors.TextSecondary
+            };
+            gbAbout.Controls.Add(lblAboutTimestamp);
+
+            TextBox txtAboutExePath = new TextBox
+            {
+                Text = ver.ExecutablePath,
+                Location = new Point(15, 75),
+                Size = new Size(450, 22),
+                ReadOnly = true,
+                BackColor = AppTheme.Current.Colors.Surface,
+                ForeColor = AppTheme.Current.Colors.TextSecondary,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            gbAbout.Controls.Add(txtAboutExePath);
+
+            this.Controls.Add(gbAbout);
+            this.Size = new Size(560, 770);
         }
 
         private void SetupCustomEvents()
