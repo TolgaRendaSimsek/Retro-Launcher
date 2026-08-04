@@ -1084,9 +1084,9 @@ namespace RetroLauncher.UI.Forms
         {
             using (var detailForm = new GameDetailForm(game, _libraryManager))
             {
-                detailForm.PlayClicked += (s, e) =>
+                detailForm.PlayClicked += async (s, e) =>
                 {
-                    LaunchGame(game);
+                    await ExecuteLaunchGameAsync(game);
                 };
                 detailForm.ShowDialog(this);
             }
@@ -1244,13 +1244,14 @@ namespace RetroLauncher.UI.Forms
             }
         }
 
-        private void btnPlay_Click(object? sender, EventArgs e)
+        private async void btnPlay_Click(object? sender, EventArgs e)
         {
             if (_selectedGame == null)
             {
                 MessageBox.Show(
-                    "No game selected.\n\nPlease select a game from the grid library before attempting to launch.",
-                    "Launch Error",
+                    this,
+                    "No game selected.\n\nPlease select a game from the library grid before attempting to launch.",
+                    "Launch Warning",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning
                 );
@@ -1263,51 +1264,84 @@ namespace RetroLauncher.UI.Forms
             }
             else
             {
-                LaunchGame(_selectedGame);
+                await ExecuteLaunchGameAsync(_selectedGame);
             }
         }
 
-        private async void LaunchGame(Game game)
+        private async Task ExecuteLaunchGameAsync(Game game)
         {
+            if (game == null) return;
+
+            btnPlay.Enabled = false;
+            btnPlay.Text = "⏳  LAUNCHING...";
+            lblDetailsStatus.ForeColor = Color.FromArgb(165, 180, 252);
+            lblDetailsStatus.Text = $"Launching {game.Title}...";
+
             try
             {
-                lblDetailsStatus.ForeColor = Color.FromArgb(165, 180, 252);
-                lblDetailsStatus.Text = $"Launching {game.Title}... (external process)";
-                
                 await GameLaunchService.Instance.LaunchGameAsync(game);
             }
             catch (Exception ex)
             {
                 this.WindowState = FormWindowState.Normal;
                 this.ShowInTaskbar = true;
+                
+                btnPlay.Enabled = true;
+                btnPlay.Text = "▶   PLAY";
                 lblDetailsStatus.ForeColor = Color.FromArgb(239, 68, 68);
                 lblDetailsStatus.Text = $"Launch failed: {ex.Message}";
-                
-                if (ex is InvalidOperationException && (ex.Message.Contains("BIOS", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("firmware", StringComparison.OrdinalIgnoreCase)))
+
+                ShowLaunchErrorDialog(game, ex);
+            }
+        }
+
+        private void ShowLaunchErrorDialog(Game game, Exception ex)
+        {
+            string msg = ex.Message;
+
+            if (ex is InvalidOperationException && (msg.Contains("BIOS", StringComparison.OrdinalIgnoreCase) || msg.Contains("firmware", StringComparison.OrdinalIgnoreCase)))
+            {
+                var promptResult = MessageBox.Show(
+                    this,
+                    $"{msg}\n\nWould you like to open the BIOS/Firmware Manager now to import the required files?",
+                    "BIOS / Firmware Required",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning
+                );
+                if (promptResult == DialogResult.Yes)
                 {
-                    var promptResult = MessageBox.Show(
-                        $"{ex.Message}\n\nWould you like to open the BIOS/Firmware Manager now to import the required files?",
-                        "BIOS/Firmware Required",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Warning
-                    );
-                    if (promptResult == DialogResult.Yes)
+                    using (var biosForm = new BiosManagerForm())
                     {
-                        using (var biosForm = new BiosManagerForm())
-                        {
-                            biosForm.ShowDialog(this);
-                        }
+                        biosForm.ShowDialog(this);
                     }
                 }
-                else
+            }
+            else if (ex is FileNotFoundException && (msg.Contains("executable", StringComparison.OrdinalIgnoreCase) || msg.Contains("Emulator", StringComparison.OrdinalIgnoreCase)))
+            {
+                var promptResult = MessageBox.Show(
+                    this,
+                    $"{msg}\n\nWould you like to open the Emulator Manager now to install or configure this emulator?",
+                    "Emulator Not Found",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning
+                );
+                if (promptResult == DialogResult.Yes)
                 {
-                    MessageBox.Show(
-                        $"Failed to launch game:\n{ex.Message}",
-                        "Launch Error",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error
-                    );
+                    using (var emuForm = new EmulatorManagerForm())
+                    {
+                        emuForm.ShowDialog(this);
+                    }
                 }
+            }
+            else
+            {
+                MessageBox.Show(
+                    this,
+                    $"Failed to launch '{game.Title}':\n\n{msg}\n\nCheck '%LocalAppData%\\RetroLauncher\\Logs\\package_manager.log' for detailed logs.",
+                    "Launch Error",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
             }
         }
 

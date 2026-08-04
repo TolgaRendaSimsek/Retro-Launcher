@@ -48,27 +48,40 @@ namespace RetroLauncher.Emulators.Adapters
 
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
+            if (game == null) throw new ArgumentNullException(nameof(game));
             string exePath = GetExecutablePath();
+            if (string.IsNullOrEmpty(exePath))
+            {
+                throw new FileNotFoundException($"Generic emulator executable path for '{EmulatorId}' is not configured or resolved.");
+            }
+
             string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
+            string workDir = Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory;
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase) || string.Equals(e.ExecutablePath, EmulatorId, StringComparison.OrdinalIgnoreCase));
-            string defaultArgs = emu?.DefaultLaunchArguments ?? "";
 
-            string args = defaultArgs;
-            if (!string.IsNullOrEmpty(args))
-            {
-                args += $" \"{romPath}\"";
-            }
-            else
-            {
-                args = $"\"{romPath}\"";
-            }
-
-            return new ProcessStartInfo
+            var psi = new ProcessStartInfo
             {
                 FileName = exePath,
-                Arguments = args,
-                UseShellExecute = true
+                WorkingDirectory = workDir,
+                UseShellExecute = false
             };
+
+            string defaultArgs = emu?.DefaultLaunchArguments ?? "";
+            if (!string.IsNullOrWhiteSpace(defaultArgs))
+            {
+                var parts = defaultArgs.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in parts)
+                {
+                    psi.ArgumentList.Add(part);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(romPath))
+            {
+                psi.ArgumentList.Add(romPath);
+            }
+
+            return psi;
         }
 
         public async Task<Process> LaunchGameAsync(Game game)

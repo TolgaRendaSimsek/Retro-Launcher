@@ -28,7 +28,12 @@ namespace RetroLauncher.UI.Forms
         private void SetupCustomEvents()
         {
             this.Load += GameDetailForm_Load;
-            btnPlay.Click += (s, e) => PlayClicked?.Invoke(this, EventArgs.Empty);
+            btnPlay.Click += (s, e) =>
+            {
+                btnPlay.Enabled = false;
+                btnPlay.Text = "⏳ LAUNCHING...";
+                PlayClicked?.Invoke(this, EventArgs.Empty);
+            };
             btnFavorite.Click += btnFavorite_Click;
             btnWatchTrailer.Click += btnWatchTrailer_Click;
             btnEditPaths.Click += btnEditPaths_Click;

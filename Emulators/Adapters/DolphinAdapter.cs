@@ -31,13 +31,21 @@ namespace RetroLauncher.Emulators.Adapters
 
         public ProcessStartInfo BuildLaunchCommand(Game game)
         {
+            if (game == null) throw new ArgumentNullException(nameof(game));
             string exePath = GetExecutablePath();
+            if (string.IsNullOrEmpty(exePath))
+            {
+                throw new FileNotFoundException("Dolphin executable path is not configured or resolved.");
+            }
+
             string romPath = ApplicationPaths.ResolveWritablePath(game.RomPath);
+            string workDir = Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory;
             var emu = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, EmulatorId, StringComparison.OrdinalIgnoreCase));
 
             var psi = new ProcessStartInfo
             {
                 FileName = exePath,
+                WorkingDirectory = workDir,
                 UseShellExecute = false
             };
 
@@ -48,7 +56,11 @@ namespace RetroLauncher.Emulators.Adapters
                 psi.ArgumentList.Add(part);
             }
 
-            psi.ArgumentList.Add(romPath);
+            if (!string.IsNullOrWhiteSpace(romPath))
+            {
+                psi.ArgumentList.Add(romPath);
+            }
+
             return psi;
         }
 
