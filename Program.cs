@@ -46,6 +46,7 @@ static class Program
         MainWindowLayoutTests.RunTests();
         RetroLauncher.Tests.Unit.MasterControllerKeyboardPresetTests.RunTests();
         RetroLauncher.Tests.Unit.PostGameLaunchLifecycleTests.RunTests();
+        RetroLauncher.Tests.Unit.LibraryPageLayoutTests.RunTests();
         RetroLauncher.Tests.Unit.ApplicationUpdateServiceTests.RunTestsAsync().GetAwaiter().GetResult();
         RetroLauncher.Tests.Unit.GameLaunchServiceTests.RunTestsAsync().GetAwaiter().GetResult();
 #endif

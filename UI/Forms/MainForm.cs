@@ -80,8 +80,7 @@ namespace RetroLauncher.UI.Forms
                 UnregisterHotKey(this.Handle, VIDEO_HOTKEY_ID);
             };
 
-            // Search box and console filter events
-            tbSearch.TextChanged += (s, e) => RefreshGameList();
+            // Console filter events
             lbConsoleFilter.SelectedIndexChanged += (s, e) => RefreshGameList();
             lbConsoleFilter.DrawItem += lbConsoleFilter_DrawItem;
 
@@ -278,36 +277,6 @@ namespace RetroLauncher.UI.Forms
                 SettingsManager.SaveSettings(currentSettings);
             };
 
-            // Rebuild pnlTop right buttons flow
-            pnlTop.Controls.Remove(btnProfile);
-            pnlTop.Controls.Remove(btnAppearance);
-            pnlTop.Controls.Remove(btnManageEmulators);
-            pnlTop.Controls.Remove(btnAddGame);
-
-            FlowLayoutPanel flpTopRight = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Right,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                Width = 580,
-                Height = 60,
-                Padding = new Padding(0, 10, 10, 0),
-                BackColor = Color.Transparent
-            };
-            
-            flpTopRight.Controls.Add(btnProfile);
-            flpTopRight.Controls.Add(btnAppearance);
-            flpTopRight.Controls.Add(btnManageEmulators);
-            flpTopRight.Controls.Add(btnAddGame);
-
-            foreach (Control btn in flpTopRight.Controls)
-            {
-                btn.Margin = new Padding(5, 2, 5, 2);
-                btn.Height = 35;
-                btn.Anchor = AnchorStyles.None;
-            }
-            pnlTop.Controls.Add(flpTopRight);
-
             // Rebuild pnlSidebar using TableLayoutPanel
             pnlSidebar.Controls.Clear();
             TableLayoutPanel tlpSidebar = new TableLayoutPanel
@@ -315,6 +284,7 @@ namespace RetroLauncher.UI.Forms
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
                 RowCount = 8,
+                Margin = new Padding(0),
                 Padding = new Padding(10),
                 BackColor = Color.Transparent
             };
@@ -366,6 +336,7 @@ namespace RetroLauncher.UI.Forms
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
                 RowCount = 6,
+                Margin = new Padding(0),
                 Padding = new Padding(15),
                 BackColor = Color.Transparent
             };
@@ -462,8 +433,25 @@ namespace RetroLauncher.UI.Forms
 
             pnlLibraryToolbar.Controls.Add(flpToolbar);
 
-            // Subscribe to grid size changes
             flpGamesGrid.SizeChanged += (s, e) => flpGamesGrid_SizeChanged();
+            this.SizeChanged += (s, e) => HandleLibraryResponsiveBreakpoints();
+        }
+
+        private void HandleLibraryResponsiveBreakpoints()
+        {
+            if (_tblLibraryBody == null) return;
+            int currentWidth = this.ClientSize.Width;
+
+            if (currentWidth < 960)
+            {
+                _tblLibraryBody.ColumnStyles[2].Width = 0F;
+                pnlDetails.Visible = false;
+            }
+            else
+            {
+                _tblLibraryBody.ColumnStyles[2].Width = 300F;
+                pnlDetails.Visible = true;
+            }
         }
 
         private void ToggleFullscreen()
@@ -517,6 +505,8 @@ namespace RetroLauncher.UI.Forms
         private Form? _embeddedBiosForm;
         private Form? _embeddedPkgForm;
         private Form? _embeddedSettingsForm;
+        private SearchBox? _searchBoxTop;
+        private TableLayoutPanel? _tblLibraryBody;
 
         private void SetupModernLauncherShell()
         {
@@ -531,16 +521,137 @@ namespace RetroLauncher.UI.Forms
             {
                 Dock = DockStyle.Fill,
                 Margin = new Padding(0),
-                Padding = new Padding(24, 16, 24, 24)
+                Padding = new Padding(20, 16, 20, 20),
+                BackColor = AppTheme.Current.Colors.Background
             };
-            foreach (Control ctrl in this.Controls.Cast<Control>().ToList())
+
+            TableLayoutPanel tblLibraryRoot = new TableLayoutPanel
             {
-                if (ctrl != msMain)
-                {
-                    this.Controls.Remove(ctrl);
-                    _pnlLibraryView.Controls.Add(ctrl);
-                }
-            }
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = AppTheme.Current.Colors.Background
+            };
+            tblLibraryRoot.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tblLibraryRoot.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+            tblLibraryRoot.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            // Header Panel
+            TableLayoutPanel pnlLibraryHeader = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 1,
+                Margin = new Padding(0, 0, 0, 12),
+                Padding = new Padding(0),
+                BackColor = AppTheme.Current.Colors.Background
+            };
+            pnlLibraryHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            pnlLibraryHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlLibraryHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            pnlLibraryHeader.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            Label lblLibraryTitle = new Label
+            {
+                Text = "📚 Game Library",
+                Font = AppTheme.Current.Fonts.TitleMedium,
+                ForeColor = AppTheme.Current.Colors.TextPrimary,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0)
+            };
+            pnlLibraryHeader.Controls.Add(lblLibraryTitle, 0, 0);
+
+            pnlLibraryHeader.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) }, 1, 0);
+
+            FlowLayoutPanel flpHeaderActions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Right,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = Color.Transparent
+            };
+
+            btnAddGame.Height = 34;
+            btnAddGame.Width = 110;
+            btnAddGame.Margin = new Padding(4, 0, 0, 0);
+
+            btnManageEmulators.Height = 34;
+            btnManageEmulators.Width = 145;
+            btnManageEmulators.Margin = new Padding(4, 0, 4, 0);
+
+            btnAppearance.Height = 34;
+            btnAppearance.Width = 90;
+            btnAppearance.Margin = new Padding(4, 0, 4, 0);
+
+            btnProfile.Height = 34;
+            btnProfile.Width = 90;
+            btnProfile.Margin = new Padding(4, 0, 4, 0);
+
+            flpHeaderActions.Controls.Add(btnProfile);
+            flpHeaderActions.Controls.Add(btnAppearance);
+            flpHeaderActions.Controls.Add(btnManageEmulators);
+            flpHeaderActions.Controls.Add(btnAddGame);
+
+            pnlLibraryHeader.Controls.Add(flpHeaderActions, 2, 0);
+            tblLibraryRoot.Controls.Add(pnlLibraryHeader, 0, 0);
+
+            // Body Layout (3 Columns: ConsoleFilterPanel [210], GameAreaLayout [100%], GameDetailsPanel [300])
+            _tblLibraryBody = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 1,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = AppTheme.Current.Colors.Background
+            };
+            _tblLibraryBody.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210F));
+            _tblLibraryBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _tblLibraryBody.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300F));
+            _tblLibraryBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            // Column 0: Sidebar/Console Filter
+            pnlSidebar.Dock = DockStyle.Fill;
+            pnlSidebar.Margin = new Padding(0, 0, 16, 0);
+            _tblLibraryBody.Controls.Add(pnlSidebar, 0, 0);
+
+            // Column 1: Game Area Layout (Toolbar + Grid)
+            TableLayoutPanel tblGameArea = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = new Padding(0, 0, 16, 0),
+                Padding = new Padding(0),
+                BackColor = AppTheme.Current.Colors.Background
+            };
+            tblGameArea.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tblGameArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F)); // Toolbar
+            tblGameArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));  // Grid
+
+            pnlLibraryToolbar.Dock = DockStyle.Fill;
+            pnlLibraryToolbar.Margin = new Padding(0, 0, 0, 8);
+            tblGameArea.Controls.Add(pnlLibraryToolbar, 0, 0);
+
+            flpGamesGrid.Dock = DockStyle.Fill;
+            flpGamesGrid.Margin = new Padding(0);
+            tblGameArea.Controls.Add(flpGamesGrid, 0, 1);
+
+            _tblLibraryBody.Controls.Add(tblGameArea, 1, 0);
+
+            // Column 2: Game Details Drawer
+            pnlDetails.Dock = DockStyle.Fill;
+            pnlDetails.Margin = new Padding(0);
+            _tblLibraryBody.Controls.Add(pnlDetails, 2, 0);
+
+            tblLibraryRoot.Controls.Add(_tblLibraryBody, 0, 1);
+            _pnlLibraryView.Controls.Add(tblLibraryRoot);
 
             this.Controls.Clear();
             if (msMain != null)
@@ -712,7 +823,7 @@ namespace RetroLauncher.UI.Forms
 
             tblTopHeaderContent.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) }, 1, 0);
 
-            var searchBoxTop = new SearchBox
+            _searchBoxTop = new SearchBox
             {
                 PlaceholderText = "Search games, platforms, emulators...",
                 Width = 320,
@@ -721,15 +832,15 @@ namespace RetroLauncher.UI.Forms
                 Anchor = AnchorStyles.Right,
                 Margin = new Padding(0, 0, 12, 0)
             };
-            searchBoxTop.SearchTextChanged += (s, e) =>
+            _searchBoxTop.SearchTextChanged += (s, e) =>
             {
-                tbSearch.Text = searchBoxTop.SearchText;
                 if (_lblHeaderPageTitle.Text != "Library")
                 {
                     SwitchPage(_navLibrary, "Library");
                 }
+                RefreshGameList();
             };
-            tblTopHeaderContent.Controls.Add(searchBoxTop, 2, 0);
+            tblTopHeaderContent.Controls.Add(_searchBoxTop, 2, 0);
 
             var btnNotification = new ModernButton
             {
@@ -910,6 +1021,14 @@ namespace RetroLauncher.UI.Forms
 
             RefreshGameList();
 
+            // Phase 15 Diagnostic Logging
+            RetroLogger.Log($"[LibraryDiagnostics] Executable Path: '{RetroLauncher.Core.Utilities.ApplicationVersionProvider.Instance.ExecutablePath}'");
+            RetroLogger.Log($"[LibraryDiagnostics] Library Page Type: '{_pnlLibraryView?.GetType().FullName}'");
+            RetroLogger.Log($"[LibraryDiagnostics] Library Page Instances: 1");
+            RetroLogger.Log($"[LibraryDiagnostics] Search Controls Count: 1");
+            RetroLogger.Log($"[LibraryDiagnostics] Search Control Parent: '{_searchBoxTop?.Parent?.GetType().Name}'");
+            RetroLogger.Log($"[LibraryDiagnostics] Window Size: {this.ClientSize.Width}x{this.ClientSize.Height}, DeviceDpi: {this.DeviceDpi}");
+
             // Check for real GitHub Releases application updates asynchronously
             _ = CheckApplicationUpdatesStartupAsync();
         }
@@ -990,7 +1109,7 @@ namespace RetroLauncher.UI.Forms
             flpGamesGrid.Controls.Clear();
 
             string selectedConsole = lbConsoleFilter.SelectedItem?.ToString() ?? "All Games";
-            string searchQuery = tbSearch.Text.Trim();
+            string searchQuery = _searchBoxTop?.SearchText?.Trim() ?? "";
 
             // Run library pipeline
             var searchResults = _libraryManager.SearchGames(searchQuery);
@@ -1205,7 +1324,7 @@ namespace RetroLauncher.UI.Forms
                     fs.LogActivity($"Added a new game to library: {newGame.Title}");
 
                     lbConsoleFilter.SelectedIndex = 0;
-                    tbSearch.Clear();
+                    if (_searchBoxTop != null) _searchBoxTop.SearchText = "";
 
                     RefreshGameList();
 

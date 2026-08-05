@@ -2,39 +2,6 @@ namespace RetroLauncher.UI.Forms
 {
     partial class MainForm
     {
-        private System.ComponentModel.IContainer components = null;
-        private System.Windows.Forms.Panel pnlTop;
-        private System.Windows.Forms.Label lblLogo;
-        private System.Windows.Forms.TextBox tbSearch;
-        private System.Windows.Forms.Button btnAddGame;
-        private System.Windows.Forms.Button btnManageEmulators;
-        private System.Windows.Forms.Button btnProfile;
-        private System.Windows.Forms.Panel pnlSidebar;
-        private System.Windows.Forms.Label lblSidebarHeader;
-        private System.Windows.Forms.ListBox lbConsoleFilter;
-        private System.Windows.Forms.Panel pnlDetails;
-        private System.Windows.Forms.PictureBox pbDetailsCover;
-        private System.Windows.Forms.Label lblDetailsTitle;
-        private System.Windows.Forms.Label lblDetailsConsole;
-        private System.Windows.Forms.Button btnPlay;
-        private System.Windows.Forms.Button btnEditPaths;
-        private System.Windows.Forms.Button btnDelete;
-        private System.Windows.Forms.Label lblDetailsStatus;
-        private System.Windows.Forms.FlowLayoutPanel flpGamesGrid;
-        private System.Windows.Forms.Panel pnlLibraryToolbar;
-        private System.Windows.Forms.Button btnGridView;
-        private System.Windows.Forms.Button btnListView;
-        private System.Windows.Forms.Label lblSortBy;
-        private System.Windows.Forms.ComboBox cbSort;
-        private System.Windows.Forms.Label lblFilterBy;
-        private System.Windows.Forms.ComboBox cbFilter;
-        private System.Windows.Forms.Button btnManageSaves;
-        private System.Windows.Forms.Button btnManageScreenshots;
-        private System.Windows.Forms.Button btnManageVideos;
-        private System.Windows.Forms.Button btnManageControllers;
-        private System.Windows.Forms.Button btnAppearance;
-        private System.Windows.Forms.Button btnLanguageSettings;
-
         protected override void Dispose(bool disposing)
         {
             if (disposing && (components != null))
@@ -50,9 +17,6 @@ namespace RetroLauncher.UI.Forms
             this.toolsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.romManagerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.biosManagerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.pnlTop = new System.Windows.Forms.Panel();
-            this.lblLogo = new System.Windows.Forms.Label();
-            this.tbSearch = new System.Windows.Forms.TextBox();
             this.btnAddGame = new System.Windows.Forms.Button();
             this.btnManageEmulators = new System.Windows.Forms.Button();
             this.btnProfile = new System.Windows.Forms.Button();
@@ -81,84 +45,10 @@ namespace RetroLauncher.UI.Forms
             this.btnManageControllers = new System.Windows.Forms.Button();
             this.btnAppearance = new System.Windows.Forms.Button();
             this.btnLanguageSettings = new System.Windows.Forms.Button();
-            // 
-            // msMain
-            // 
-            this.msMain.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(28)))), ((int)(((byte)(28)))), ((int)(((byte)(34)))));
-            this.msMain.ForeColor = System.Drawing.Color.White;
-            this.msMain.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.toolsToolStripMenuItem});
-            this.msMain.Location = new System.Drawing.Point(0, 0);
-            this.msMain.Name = "msMain";
-            this.msMain.Size = new System.Drawing.Size(1100, 24);
-            this.msMain.TabIndex = 5;
-            this.msMain.Text = "msMain";
-            // 
-            // toolsToolStripMenuItem
-            // 
-            this.toolsToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.romManagerToolStripMenuItem,
-            this.biosManagerToolStripMenuItem});
-            this.toolsToolStripMenuItem.ForeColor = System.Drawing.Color.White;
-            this.toolsToolStripMenuItem.Name = "toolsToolStripMenuItem";
-            this.toolsToolStripMenuItem.Size = new System.Drawing.Size(46, 20);
-            this.toolsToolStripMenuItem.Text = "Tools";
-            // 
-            // romManagerToolStripMenuItem
-            // 
-            this.romManagerToolStripMenuItem.Name = "romManagerToolStripMenuItem";
-            this.romManagerToolStripMenuItem.Size = new System.Drawing.Size(206, 22);
-            this.romManagerToolStripMenuItem.Text = "ROM Manager";
-            // 
-            // biosManagerToolStripMenuItem
-            // 
-            this.biosManagerToolStripMenuItem.Name = "biosManagerToolStripMenuItem";
-            this.biosManagerToolStripMenuItem.Size = new System.Drawing.Size(206, 22);
-            this.biosManagerToolStripMenuItem.Text = "BIOS/Firmware Manager";
-            // 
-            this.pnlTop.SuspendLayout();
             this.pnlSidebar.SuspendLayout();
             this.pnlDetails.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pbDetailsCover)).BeginInit();
             this.SuspendLayout();
-            // 
-            // pnlTop
-            // 
-            this.pnlTop.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(24)))), ((int)(((byte)(24)))), ((int)(((byte)(28)))));
-            this.pnlTop.Controls.Add(this.lblLogo);
-            this.pnlTop.Controls.Add(this.tbSearch);
-            this.pnlTop.Controls.Add(this.btnProfile);
-            this.pnlTop.Controls.Add(this.btnAppearance);
-            this.pnlTop.Controls.Add(this.btnManageEmulators);
-            this.pnlTop.Controls.Add(this.btnAddGame);
-            this.pnlTop.Dock = System.Windows.Forms.DockStyle.Top;
-            this.pnlTop.Location = new System.Drawing.Point(0, 0);
-            this.pnlTop.Name = "pnlTop";
-            this.pnlTop.Size = new System.Drawing.Size(1100, 60);
-            this.pnlTop.TabIndex = 0;
-            // 
-            // lblLogo
-            // 
-            this.lblLogo.AutoSize = true;
-            this.lblLogo.Font = new System.Drawing.Font("Segoe UI", 13F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
-            this.lblLogo.ForeColor = System.Drawing.Color.White;
-            this.lblLogo.Location = new System.Drawing.Point(20, 17);
-            this.lblLogo.Name = "lblLogo";
-            this.lblLogo.Size = new System.Drawing.Size(193, 25);
-            this.lblLogo.TabIndex = 0;
-            this.lblLogo.Text = "🕹️   RETROLAUNCHER";
-            // 
-            // tbSearch
-            // 
-            this.tbSearch.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(36)))), ((int)(((byte)(36)))), ((int)(((byte)(42)))));
-            this.tbSearch.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.tbSearch.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
-            this.tbSearch.ForeColor = System.Drawing.Color.White;
-            this.tbSearch.Location = new System.Drawing.Point(225, 17);
-            this.tbSearch.Name = "tbSearch";
-            this.tbSearch.PlaceholderText = "Search library...";
-            this.tbSearch.Size = new System.Drawing.Size(280, 25);
-            this.tbSearch.TabIndex = 1;
             // 
             // btnAddGame
             // 
@@ -569,7 +459,6 @@ namespace RetroLauncher.UI.Forms
             this.Controls.Add(this.pnlLibraryToolbar);
             this.Controls.Add(this.pnlDetails);
             this.Controls.Add(this.pnlSidebar);
-            this.Controls.Add(this.pnlTop);
             this.Controls.Add(this.msMain);
             this.MainMenuStrip = this.msMain;
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
@@ -577,8 +466,6 @@ namespace RetroLauncher.UI.Forms
             this.Name = "MainForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "RetroLauncher";
-            this.pnlTop.ResumeLayout(false);
-            this.pnlTop.PerformLayout();
             this.pnlSidebar.ResumeLayout(false);
             this.pnlSidebar.PerformLayout();
             this.pnlDetails.ResumeLayout(false);
@@ -590,9 +477,38 @@ namespace RetroLauncher.UI.Forms
 
         }
 
+        private System.ComponentModel.IContainer components = null!;
         private System.Windows.Forms.MenuStrip msMain;
         private System.Windows.Forms.ToolStripMenuItem toolsToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem romManagerToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem biosManagerToolStripMenuItem;
+        private System.Windows.Forms.Button btnAddGame;
+        private System.Windows.Forms.Button btnManageEmulators;
+        private System.Windows.Forms.Button btnProfile;
+        private System.Windows.Forms.Panel pnlSidebar;
+        private System.Windows.Forms.Label lblSidebarHeader;
+        private System.Windows.Forms.ListBox lbConsoleFilter;
+        private System.Windows.Forms.Panel pnlDetails;
+        private System.Windows.Forms.PictureBox pbDetailsCover;
+        private System.Windows.Forms.Label lblDetailsTitle;
+        private System.Windows.Forms.Label lblDetailsConsole;
+        private System.Windows.Forms.Button btnPlay;
+        private System.Windows.Forms.Button btnEditPaths;
+        private System.Windows.Forms.Button btnDelete;
+        private System.Windows.Forms.Label lblDetailsStatus;
+        private System.Windows.Forms.FlowLayoutPanel flpGamesGrid;
+        private System.Windows.Forms.Panel pnlLibraryToolbar;
+        private System.Windows.Forms.Button btnGridView;
+        private System.Windows.Forms.Button btnListView;
+        private System.Windows.Forms.Label lblSortBy;
+        private System.Windows.Forms.ComboBox cbSort;
+        private System.Windows.Forms.Label lblFilterBy;
+        private System.Windows.Forms.ComboBox cbFilter;
+        private System.Windows.Forms.Button btnManageSaves;
+        private System.Windows.Forms.Button btnManageScreenshots;
+        private System.Windows.Forms.Button btnManageVideos;
+        private System.Windows.Forms.Button btnManageControllers;
+        private System.Windows.Forms.Button btnAppearance;
+        private System.Windows.Forms.Button btnLanguageSettings;
     }
 }
