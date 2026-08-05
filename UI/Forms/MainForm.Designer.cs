@@ -13,10 +13,6 @@ namespace RetroLauncher.UI.Forms
 
         private void InitializeComponent()
         {
-            this.msMain = new System.Windows.Forms.MenuStrip();
-            this.toolsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.romManagerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.biosManagerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.btnAddGame = new System.Windows.Forms.Button();
             this.btnManageEmulators = new System.Windows.Forms.Button();
             this.btnProfile = new System.Windows.Forms.Button();
@@ -459,8 +455,6 @@ namespace RetroLauncher.UI.Forms
             this.Controls.Add(this.pnlLibraryToolbar);
             this.Controls.Add(this.pnlDetails);
             this.Controls.Add(this.pnlSidebar);
-            this.Controls.Add(this.msMain);
-            this.MainMenuStrip = this.msMain;
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
             this.Name = "MainForm";
@@ -470,18 +464,12 @@ namespace RetroLauncher.UI.Forms
             this.pnlSidebar.PerformLayout();
             this.pnlDetails.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.pbDetailsCover)).EndInit();
-            this.msMain.ResumeLayout(false);
-            this.msMain.PerformLayout();
             this.ResumeLayout(false);
             this.PerformLayout();
 
         }
 
         private System.ComponentModel.IContainer components = null!;
-        private System.Windows.Forms.MenuStrip msMain;
-        private System.Windows.Forms.ToolStripMenuItem toolsToolStripMenuItem;
-        private System.Windows.Forms.ToolStripMenuItem romManagerToolStripMenuItem;
-        private System.Windows.Forms.ToolStripMenuItem biosManagerToolStripMenuItem;
         private System.Windows.Forms.Button btnAddGame;
         private System.Windows.Forms.Button btnManageEmulators;
         private System.Windows.Forms.Button btnProfile;

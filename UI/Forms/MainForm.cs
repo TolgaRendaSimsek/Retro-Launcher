@@ -104,38 +104,6 @@ namespace RetroLauncher.UI.Forms
             btnAppearance.Click += btnAppearance_Click;
             btnLanguageSettings.Click += btnLanguageSettings_Click;
 
-            romManagerToolStripMenuItem.Click += (s, e) => {
-                MessageBox.Show("ROM Manager UI is under development.", "ROM Manager", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            };
-            biosManagerToolStripMenuItem.Click += (s, e) => {
-                using (var form = new BiosManagerForm())
-                {
-                    form.ShowDialog(this);
-                }
-            };
-
-            var setupWizardItem = new ToolStripMenuItem("First-Time Setup Wizard");
-            setupWizardItem.Click += (s, e) => {
-                using (var wizard = new SetupWizardForm())
-                {
-                    if (wizard.ShowDialog(this) == DialogResult.OK)
-                    {
-                        EmulatorManager.Instance.LoadEmulators();
-                        RefreshGameList();
-                    }
-                }
-            };
-            toolsToolStripMenuItem.DropDownItems.Add(setupWizardItem);
-
-            var packageManagerItem = new ToolStripMenuItem("Package Manager");
-            packageManagerItem.Click += (s, e) => {
-                using (var form = new PackageManagerForm())
-                {
-                    form.ShowDialog(this);
-                }
-            };
-            toolsToolStripMenuItem.DropDownItems.Add(packageManagerItem);
-
             this.Shown += MainForm_Shown;
 
             GameLaunchService.Instance.GameStarted += (s, gameId) =>
@@ -654,10 +622,6 @@ namespace RetroLauncher.UI.Forms
             _pnlLibraryView.Controls.Add(tblLibraryRoot);
 
             this.Controls.Clear();
-            if (msMain != null)
-            {
-                this.Controls.Add(msMain);
-            }
 
             // -----------------------------------------------------------------
             // 1. RootLayout (TableLayoutPanel: 2 Columns [Absolute 210, Percent 100], 1 Row [Percent 100])
@@ -696,6 +660,17 @@ namespace RetroLauncher.UI.Forms
                 BackColor = AppTheme.Current.Colors.SidebarBackground
             };
             pnlSidebarNav.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlSidebarNav.RowStyles.Clear();
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
 
             var lblLogoHeader = new Label
             {
@@ -746,7 +721,6 @@ namespace RetroLauncher.UI.Forms
             pnlSidebarNav.Controls.Add(_navSettings, 0, 7);
 
             pnlSidebarNav.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) }, 0, 8);
-            pnlSidebarNav.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             var btnCollapse = new ModernButton { Text = "◀ Collapse", Dock = DockStyle.Fill, Margin = new Padding(4, 2, 4, 2), Height = 34, IsPrimary = false };
             btnCollapse.Click += (s, e) =>
@@ -782,7 +756,7 @@ namespace RetroLauncher.UI.Forms
                 BackColor = AppTheme.Current.Colors.Background
             };
             _tblRightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            _tblRightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F));
+            _tblRightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56F));
             _tblRightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             // -----------------------------------------------------------------
@@ -802,21 +776,23 @@ namespace RetroLauncher.UI.Forms
                 ColumnCount = 4,
                 RowCount = 1,
                 Margin = new Padding(0),
-                Padding = new Padding(24, 8, 24, 8),
+                Padding = new Padding(24, 0, 24, 0),
                 BackColor = AppTheme.Current.Colors.TopBarBackground
             };
             tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tblTopHeaderContent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tblTopHeaderContent.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             _lblHeaderPageTitle = new Label
             {
-                Text = "Home",
+                Text = "🏠 Dashboard",
                 Font = AppTheme.Current.Fonts.TitleMedium,
                 ForeColor = AppTheme.Current.Colors.TextPrimary,
-                AutoSize = true,
-                Anchor = AnchorStyles.Left,
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
                 Margin = new Padding(0, 0, 20, 0)
             };
             tblTopHeaderContent.Controls.Add(_lblHeaderPageTitle, 0, 0);
@@ -826,11 +802,12 @@ namespace RetroLauncher.UI.Forms
             _searchBoxTop = new SearchBox
             {
                 PlaceholderText = "Search games, platforms, emulators...",
-                Width = 320,
+                Width = 340,
+                Height = 34,
                 MinimumSize = new Size(220, 34),
-                MaximumSize = new Size(380, 34),
+                MaximumSize = new Size(400, 34),
                 Anchor = AnchorStyles.Right,
-                Margin = new Padding(0, 0, 12, 0)
+                Margin = new Padding(0, 11, 12, 11)
             };
             _searchBoxTop.SearchTextChanged += (s, e) =>
             {
@@ -848,9 +825,9 @@ namespace RetroLauncher.UI.Forms
                 Size = new Size(130, 34),
                 IsPrimary = false,
                 Anchor = AnchorStyles.Right,
-                Margin = new Padding(0)
+                Margin = new Padding(0, 11, 0, 11)
             };
-            btnNotification.Click += (s, e) => ToastNotification.ShowToast(this, "No new notifications", StatusType.Info);
+            btnNotification.Click += (s, e) => ToastNotification.ShowToast(this, "All systems operational. No new notifications.", StatusType.Info);
             tblTopHeaderContent.Controls.Add(btnNotification, 3, 0);
 
             _pnlTopBarPanel.Controls.Add(tblTopHeaderContent);
@@ -910,7 +887,12 @@ namespace RetroLauncher.UI.Forms
             _navSettings.IsSelected = false;
 
             navItem.IsSelected = true;
-            _lblHeaderPageTitle.Text = pageName;
+            _lblHeaderPageTitle.Text = pageName == "Home" ? "🏠 Dashboard" : pageName;
+
+            if (_searchBoxTop != null)
+            {
+                _searchBoxTop.Visible = (pageName == "Library");
+            }
 
             _pnlContentHost.SuspendLayout();
             _pnlContentHost.Controls.Clear();

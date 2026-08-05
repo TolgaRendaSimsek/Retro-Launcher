@@ -16,12 +16,12 @@ namespace RetroLauncher.UI.Controls
 
         public ModernButton()
         {
-            this.SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            this.SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
             this.FlatStyle = FlatStyle.Flat;
             this.FlatAppearance.BorderSize = 0;
             this.Font = AppTheme.Current.Fonts.ButtonMedium;
             this.ForeColor = AppTheme.Current.Colors.TextPrimary;
-            this.BackColor = AppTheme.Current.Colors.SurfaceCard;
+            this.BackColor = Color.Transparent;
             this.Size = new Size(120, 36);
             this.Cursor = Cursors.Hand;
         }
@@ -39,7 +39,27 @@ namespace RetroLauncher.UI.Controls
         public int CornerRadius
         {
             get => _cornerRadius;
-            set { _cornerRadius = value; Invalidate(); }
+            set
+            {
+                _cornerRadius = value;
+                UpdateRegion();
+                Invalidate();
+            }
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            UpdateRegion();
+        }
+
+        private void UpdateRegion()
+        {
+            if (Width > 0 && Height > 0)
+            {
+                using var path = GetRoundedPath(new Rectangle(0, 0, Width, Height), _cornerRadius);
+                this.Region = new Region(path);
+            }
         }
 
         protected override void OnMouseEnter(EventArgs e)
@@ -77,22 +97,7 @@ namespace RetroLauncher.UI.Controls
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-            int shadowOffset = _isPressed ? 1 : 2;
-            Rectangle shadowRect = new Rectangle(0, shadowOffset, Width - 1, Height - 1 - shadowOffset);
-            Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1 - (shadowOffset > 1 ? 2 : 1));
-
-            // 1. Soft Shadow
-            if (Enabled)
-            {
-                int shadowAlpha = _isPressed ? 12 : (_isHovered ? 45 : 25);
-                using (GraphicsPath shadowPath = GetRoundedPath(shadowRect, _cornerRadius))
-                using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(shadowAlpha, 0, 0, 0)))
-                {
-                    g.FillPath(shadowBrush, shadowPath);
-                }
-            }
-
-            // 2. Button Fill
+            Rectangle rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using GraphicsPath path = GetRoundedPath(rect, _cornerRadius);
 
             Color fillBg = _isPrimary
@@ -109,18 +114,16 @@ namespace RetroLauncher.UI.Controls
                 g.FillPath(brush, path);
             }
 
-            // 3. Subtle Border
             Color borderColor = _isHovered ? AppTheme.Current.Colors.BorderHover : AppTheme.Current.Colors.Border;
             using (Pen pen = new Pen(borderColor, 1F))
             {
                 g.DrawPath(pen, path);
             }
 
-            // 4. Text & Content with 1px Pressed Offset
             if (!string.IsNullOrEmpty(Text))
             {
                 Color textColor = Enabled ? (this.ForeColor) : AppTheme.Current.Colors.TextMuted;
-                Rectangle textRect = rect;
+                Rectangle textRect = new Rectangle(0, 0, Width, Height);
                 if (_isPressed)
                 {
                     textRect.Offset(1, 1);
