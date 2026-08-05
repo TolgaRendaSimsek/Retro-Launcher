@@ -20,6 +20,9 @@ namespace RetroLauncher.UI.Forms
         private FormBorderStyle _prevFormBorderStyle;
         private Rectangle _prevBounds;
 
+        private FormWindowState _preLaunchWindowState = FormWindowState.Normal;
+        private Rectangle _preLaunchBounds;
+
         public static event EventHandler<string>? GameProcessExited;
         private System.Windows.Forms.Timer? _mainSessionTimer;
 
@@ -141,6 +144,11 @@ namespace RetroLauncher.UI.Forms
                 if (this.IsDisposed || !this.IsHandleCreated) return;
                 this.Invoke((MethodInvoker)delegate
                 {
+                    _preLaunchWindowState = this.WindowState;
+                    if (this.WindowState == FormWindowState.Normal)
+                    {
+                        _preLaunchBounds = this.Bounds;
+                    }
                     this.WindowState = FormWindowState.Minimized;
                     this.ShowInTaskbar = false;
                 });
@@ -151,32 +159,7 @@ namespace RetroLauncher.UI.Forms
                 if (this.IsDisposed || !this.IsHandleCreated) return;
                 this.Invoke((MethodInvoker)delegate
                 {
-                    this.WindowState = FormWindowState.Normal;
-                    this.ShowInTaskbar = true;
-                    this.Focus();
-
-                    GameProcessExited?.Invoke(null, gameId);
-
-                    if (_selectedGame != null)
-                    {
-                        if (_selectedGame.Platform.StartsWith("Sony PlayStation", StringComparison.OrdinalIgnoreCase))
-                        {
-                            lblDetailsStatus.ForeColor = Color.FromArgb(248, 113, 113);
-                            lblDetailsStatus.Text = "⚠️ PlayStation emulators require BIOS files (PS1/PS2) or system firmware (PS3) to run. These must be legally obtained by the user.";
-                        }
-                        else
-                        {
-                            lblDetailsStatus.ForeColor = Color.FromArgb(156, 163, 175);
-                            lblDetailsStatus.Text = "Ready to play.";
-                        }
-                    }
-                    else
-                    {
-                        lblDetailsStatus.ForeColor = Color.FromArgb(156, 163, 175);
-                        lblDetailsStatus.Text = "Ready to play.";
-                    }
-
-                    RefreshGameList();
+                    RestoreLauncherWindowAfterGame(gameId);
                 });
             };
 
@@ -778,6 +761,15 @@ namespace RetroLauncher.UI.Forms
 
             _tblRootLayout.Controls.Add(_tblRightLayout, 1, 0);
 
+            EnableDoubleBuffering(this);
+            EnableDoubleBuffering(_tblRootLayout);
+            EnableDoubleBuffering(_tblRightLayout);
+            EnableDoubleBuffering(_pnlContentHost);
+            EnableDoubleBuffering(_pnlLibraryView);
+            EnableDoubleBuffering(flpGamesGrid);
+            EnableDoubleBuffering(pnlDetails);
+            EnableDoubleBuffering(pnlSidebar);
+
             this.Controls.Add(_tblRootLayout);
 
             // Home Page Initialization
@@ -866,6 +858,10 @@ namespace RetroLauncher.UI.Forms
 
         private void flpGamesGrid_SizeChanged()
         {
+            if (flpGamesGrid == null || flpGamesGrid.IsDisposed) return;
+            int clientWidth = flpGamesGrid.ClientSize.Width - flpGamesGrid.Padding.Horizontal;
+            if (clientWidth <= 50) return;
+
             if (!_isGridView)
             {
                 flpGamesGrid.SuspendLayout();
@@ -873,18 +869,17 @@ namespace RetroLauncher.UI.Forms
                 {
                     if (ctrl is GameListRow row)
                     {
-                        row.Width = flpGamesGrid.ClientSize.Width - 35;
+                        row.Width = Math.Max(200, clientWidth - 35);
                     }
                 }
                 flpGamesGrid.ResumeLayout();
                 return;
             }
 
-            int clientWidth = flpGamesGrid.ClientSize.Width - flpGamesGrid.Padding.Horizontal;
             int cardMinWith = 140;
             int cardMargin = 10;
             int colCount = Math.Max(1, clientWidth / (cardMinWith + cardMargin));
-            int targetWidth = (clientWidth / colCount) - cardMargin;
+            int targetWidth = Math.Max(120, (clientWidth / colCount) - cardMargin);
 
             flpGamesGrid.SuspendLayout();
             foreach (Control ctrl in flpGamesGrid.Controls)
@@ -1272,6 +1267,12 @@ namespace RetroLauncher.UI.Forms
         {
             if (game == null) return;
 
+            _preLaunchWindowState = this.WindowState;
+            if (this.WindowState == FormWindowState.Normal)
+            {
+                _preLaunchBounds = this.Bounds;
+            }
+
             btnPlay.Enabled = false;
             btnPlay.Text = "⏳  LAUNCHING...";
             lblDetailsStatus.ForeColor = Color.FromArgb(165, 180, 252);
@@ -1283,9 +1284,7 @@ namespace RetroLauncher.UI.Forms
             }
             catch (Exception ex)
             {
-                this.WindowState = FormWindowState.Normal;
-                this.ShowInTaskbar = true;
-                
+                RestoreLauncherWindowAfterGame(game.Id);
                 btnPlay.Enabled = true;
                 btnPlay.Text = "▶   PLAY";
                 lblDetailsStatus.ForeColor = Color.FromArgb(239, 68, 68);
@@ -1293,6 +1292,86 @@ namespace RetroLauncher.UI.Forms
 
                 ShowLaunchErrorDialog(game, ex);
             }
+        }
+
+        private void RestoreLauncherWindowAfterGame(string gameId)
+        {
+            if (this.IsDisposed || !this.IsHandleCreated) return;
+
+            this.SuspendLayout();
+            _tblRootLayout?.SuspendLayout();
+            _tblRightLayout?.SuspendLayout();
+            _pnlContentHost?.SuspendLayout();
+            _pnlLibraryView?.SuspendLayout();
+            pnlDetails?.SuspendLayout();
+
+            this.ShowInTaskbar = true;
+
+            if (_preLaunchWindowState == FormWindowState.Maximized)
+            {
+                this.WindowState = FormWindowState.Maximized;
+            }
+            else
+            {
+                this.WindowState = FormWindowState.Normal;
+                if (_preLaunchBounds.Width > 200 && _preLaunchBounds.Height > 200)
+                {
+                    this.Bounds = _preLaunchBounds;
+                }
+            }
+
+            this.Show();
+            this.BringToFront();
+            this.Activate();
+            this.Focus();
+
+            btnPlay.Enabled = true;
+            btnPlay.Text = "▶  PLAY";
+            btnPlay.BackColor = Color.FromArgb(99, 102, 241);
+
+            GameProcessExited?.Invoke(null, gameId);
+
+            var updatedGame = _libraryManager.Games.FirstOrDefault(g => g.Id == gameId);
+            if (updatedGame != null && _selectedGame?.Id == gameId)
+            {
+                _selectedGame = updatedGame;
+                lblDetailsTitle.Text = updatedGame.Title;
+                lblDetailsConsole.Text = updatedGame.Platform;
+            }
+
+            if (_selectedGame != null)
+            {
+                if (_selectedGame.Platform.StartsWith("Sony PlayStation", StringComparison.OrdinalIgnoreCase))
+                {
+                    lblDetailsStatus.ForeColor = Color.FromArgb(248, 113, 113);
+                    lblDetailsStatus.Text = "⚠️ PlayStation emulators require BIOS files (PS1/PS2) or system firmware (PS3) to run. These must be legally obtained by the user.";
+                }
+                else
+                {
+                    lblDetailsStatus.ForeColor = Color.FromArgb(156, 163, 175);
+                    lblDetailsStatus.Text = "Ready to play.";
+                }
+            }
+
+            pnlDetails?.ResumeLayout(true);
+            _pnlLibraryView?.ResumeLayout(true);
+            _pnlContentHost?.ResumeLayout(true);
+            _tblRightLayout?.ResumeLayout(true);
+            _tblRootLayout?.ResumeLayout(true);
+            this.ResumeLayout(true);
+            flpGamesGrid_SizeChanged();
+            this.PerformLayout();
+        }
+
+        private static void EnableDoubleBuffering(Control? c)
+        {
+            if (c == null) return;
+            try
+            {
+                typeof(Control).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.SetValue(c, true, null);
+            }
+            catch { }
         }
 
         private void ShowLaunchErrorDialog(Game game, Exception ex)

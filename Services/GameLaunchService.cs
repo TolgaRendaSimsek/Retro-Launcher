@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using RetroLauncher.Emulators;
 using RetroLauncher.Emulators.Adapters;
@@ -11,6 +12,16 @@ using RetroLauncher.Services.Logging;
 
 namespace RetroLauncher.Services
 {
+    public enum LaunchState
+    {
+        Idle,
+        Preparing,
+        Launching,
+        Running,
+        Restoring,
+        Failed
+    }
+
     public class GameLaunchService
     {
         private static GameLaunchService? _instance;
@@ -19,8 +30,17 @@ namespace RetroLauncher.Services
         private readonly Dictionary<string, Process> _runningGames = new();
         private readonly object _lock = new();
 
+        public LaunchState CurrentState { get; private set; } = LaunchState.Idle;
+
+        public event EventHandler<LaunchState>? StateChanged;
         public event EventHandler<string>? GameStarted;
         public event EventHandler<string>? GameExited;
+
+        private void SetState(LaunchState newState)
+        {
+            CurrentState = newState;
+            StateChanged?.Invoke(this, newState);
+        }
 
         public bool IsGameRunning(string gameId)
         {
@@ -72,6 +92,14 @@ namespace RetroLauncher.Services
 
         public async Task LaunchGameAsync(Game game)
         {
+            if (CurrentState != LaunchState.Idle && CurrentState != LaunchState.Failed)
+            {
+                RetroLogger.Log($"Launch requested for '{game?.Title}' while launch state is '{CurrentState}'. Ignoring duplicate launch request.", "WARNING");
+                return;
+            }
+
+            SetState(LaunchState.Preparing);
+
             string emulatorId = "Unknown";
             string exePath = "Unknown";
             string workingDir = "Unknown";
@@ -175,7 +203,6 @@ namespace RetroLauncher.Services
                 var emuConfig = EmulatorManager.Instance.Config.Emulators.FirstOrDefault(e => string.Equals(e.Id, emulatorId, StringComparison.OrdinalIgnoreCase));
                 if (emuConfig != null)
                 {
-                    // Rescan BIOS folder right before verification
                     BiosManager.Instance.DetectBiosStatus();
 
                     if (emuConfig.RequiresBIOS)
@@ -197,7 +224,6 @@ namespace RetroLauncher.Services
                             );
                         }
 
-                        // Synchronize BIOS asynchronously
                         if (biosItem != null)
                         {
                             await BiosSynchronizationService.Instance.SyncEmulatorBiosAsync(emuConfig.Id);
@@ -285,8 +311,9 @@ namespace RetroLauncher.Services
                 }
 
                 // Step 9: Starting process
+                SetState(LaunchState.Launching);
                 LogStep("Starting process...");
-                Process? process = await Task.Run(() => Process.Start(psi));
+                Process? process = Process.Start(psi);
                 if (process == null)
                 {
                     throw new InvalidOperationException($"Process.Start returned null for executable:\n'{psi.FileName}'");
@@ -310,89 +337,77 @@ namespace RetroLauncher.Services
                     }
                 }
 
-                // Step 10: Process tracking & session management
+                // Step 10: Process tracking & async session management
                 lock (_lock)
                 {
                     _runningGames[game.Id] = process;
                 }
 
+                SetState(LaunchState.Running);
                 GameStarted?.Invoke(this, game.Id);
 
-                _ = Task.Run(() =>
-                {
-                    try
-                    {
-                        PlaytimeManager.Instance.StartSession(game.Id, process.Id);
-                        process.EnableRaisingEvents = true;
-                        process.WaitForExit();
-
-                        lock (_lock)
-                        {
-                            _runningGames.Remove(game.Id);
-                        }
-
-                        int sessionMins = PlaytimeManager.Instance.EndSession(game.Id);
-
-                        game.TotalPlaytimeMinutes = PlaytimeManager.Instance.GetTotalPlaytime(game.Id);
-                        game.LastPlayed = PlaytimeManager.Instance.GetOrCreateRecord(game.Id).LastPlayed;
-                        
-                        var libraryManager = new GameLibraryManager();
-                        libraryManager.UpdateGame(game);
-
-                        var fs = new MockFriendsService();
-                        var profile = fs.GetLocalProfile();
-                        profile.TotalPlayTimeMinutes = libraryManager.Games.Sum(g => g.TotalPlaytimeMinutes);
-                        fs.SaveLocalProfile(profile);
-                        fs.UpdateMyStatus(ActivityStatus.Online, "");
-                        fs.LogActivity($"Finished playing {game.Title} (Session: {sessionMins} mins)");
-
-                        GameExited?.Invoke(this, game.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        lock (_lock)
-                        {
-                            _runningGames.Remove(game.Id);
-                        }
-                        RetroLogger.Log($"Error tracking playtime/session for game {game.Title}: {ex.Message}", "WARNING");
-                        GameExited?.Invoke(this, game.Id);
-                    }
-                });
-            }
-            catch (FileNotFoundException ex)
-            {
-                LogDetailedError(game, emulatorId, exePath, workingDir, argsText, ex);
-                throw;
-            }
-            catch (DirectoryNotFoundException ex)
-            {
-                LogDetailedError(game, emulatorId, exePath, workingDir, argsText, ex);
-                throw;
-            }
-            catch (IOException ex)
-            {
-                LogDetailedError(game, emulatorId, exePath, workingDir, argsText, ex);
-                throw;
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                LogDetailedError(game, emulatorId, exePath, workingDir, argsText, ex);
-                throw;
-            }
-            catch (Win32Exception ex)
-            {
-                LogDetailedError(game, emulatorId, exePath, workingDir, argsText, ex);
-                throw;
-            }
-            catch (InvalidOperationException ex)
-            {
-                LogDetailedError(game, emulatorId, exePath, workingDir, argsText, ex);
-                throw;
+                _ = MonitorProcessAsync(game, process);
             }
             catch (Exception ex)
             {
+                SetState(LaunchState.Failed);
                 LogDetailedError(game, emulatorId, exePath, workingDir, argsText, ex);
                 throw;
+            }
+        }
+
+        private async Task MonitorProcessAsync(Game game, Process process)
+        {
+            try
+            {
+                PlaytimeManager.Instance.StartSession(game.Id, process.Id);
+                process.EnableRaisingEvents = true;
+
+                var tcs = new TaskCompletionSource<bool>();
+                process.Exited += (s, e) => tcs.TrySetResult(true);
+
+                if (process.HasExited)
+                {
+                    tcs.TrySetResult(true);
+                }
+
+                await tcs.Task;
+
+                lock (_lock)
+                {
+                    _runningGames.Remove(game.Id);
+                }
+
+                int sessionMins = PlaytimeManager.Instance.EndSession(game.Id);
+                game.TotalPlaytimeMinutes = PlaytimeManager.Instance.GetTotalPlaytime(game.Id);
+                game.LastPlayed = PlaytimeManager.Instance.GetOrCreateRecord(game.Id).LastPlayed;
+
+                var libraryManager = new GameLibraryManager();
+                libraryManager.UpdateGame(game);
+
+                var fs = new MockFriendsService();
+                var profile = fs.GetLocalProfile();
+                profile.TotalPlayTimeMinutes = libraryManager.Games.Sum(g => g.TotalPlaytimeMinutes);
+                fs.SaveLocalProfile(profile);
+                fs.UpdateMyStatus(ActivityStatus.Online, "");
+                fs.LogActivity($"Finished playing {game.Title} (Session: {sessionMins} mins)");
+
+                SetState(LaunchState.Restoring);
+                GameExited?.Invoke(this, game.Id);
+            }
+            catch (Exception ex)
+            {
+                lock (_lock)
+                {
+                    _runningGames.Remove(game.Id);
+                }
+                RetroLogger.Log($"Error tracking playtime/session for game {game.Title}: {ex.Message}", "WARNING");
+                SetState(LaunchState.Restoring);
+                GameExited?.Invoke(this, game.Id);
+            }
+            finally
+            {
+                SetState(LaunchState.Idle);
             }
         }
 
