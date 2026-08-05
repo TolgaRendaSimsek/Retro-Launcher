@@ -30,7 +30,6 @@
     <Compile Remove="RetroLauncherUpdater\**" />
     <EmbeddedResource Remove="RetroLauncherUpdater\**" />
     <None Remove="RetroLauncherUpdater\**" />
-    <None Update="mock_update.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

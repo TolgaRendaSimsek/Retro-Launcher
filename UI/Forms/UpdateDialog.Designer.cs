@@ -64,7 +64,7 @@ namespace RetroLauncher.UI.Forms
             this.lblVersionDetails.Name = "lblVersionDetails";
             this.lblVersionDetails.Size = new System.Drawing.Size(193, 19);
             this.lblVersionDetails.TabIndex = 2;
-            this.lblVersionDetails.Text = "Current: 1.0.0  ➔  Latest: 1.1.0";
+            this.lblVersionDetails.Text = "";
             // 
             // rtbChangelog
             // 

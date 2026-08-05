@@ -910,8 +910,50 @@ namespace RetroLauncher.UI.Forms
 
             RefreshGameList();
 
-            // Check for updates asynchronously
-            _ = UpdateManager.CheckForUpdatesAsync(this);
+            // Check for real GitHub Releases application updates asynchronously
+            _ = CheckApplicationUpdatesStartupAsync();
+        }
+
+        private async Task CheckApplicationUpdatesStartupAsync()
+        {
+            try
+            {
+                var versionProvider = RetroLauncher.Core.Utilities.ApplicationVersionProvider.Instance;
+                var updateService = RetroLauncher.Services.Updates.ApplicationUpdateService.Instance;
+
+                RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Executable Path: {versionProvider.ExecutablePath}");
+                RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Current Assembly Version: {versionProvider.InstalledVersion}");
+                RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Update Service Implementation: {updateService.GetType().FullName}");
+
+                var checkResult = await updateService.CheckForUpdatesAsync(forceRefresh: true);
+
+                RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Check Succeeded: {checkResult.CheckSucceeded}, ErrorCode: '{checkResult.ErrorCode}'");
+                RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Remote Version: '{checkResult.LatestVersion?.ToString() ?? checkResult.ReleaseTag ?? "N/A"}'");
+                RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Update Available: {checkResult.UpdateAvailable}");
+
+                if (checkResult.CheckSucceeded && checkResult.UpdateAvailable)
+                {
+                    RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Verified GitHub Release update available. Presenting UpdateDialog for tag '{checkResult.ReleaseTag}'.");
+                    if (!this.IsDisposed && this.IsHandleCreated)
+                    {
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            using (var dialog = new UpdateDialog(checkResult))
+                            {
+                                dialog.ShowDialog(this);
+                            }
+                        });
+                    }
+                }
+                else
+                {
+                    RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Dialog not shown. Reason: {(checkResult.CheckSucceeded ? "Application is up to date." : $"Check failed with code {checkResult.ErrorCode}: {checkResult.ErrorMessage}")}");
+                }
+            }
+            catch (Exception ex)
+            {
+                RetroLauncher.Services.Logging.RetroLogger.Log($"[StartupUpdateCheck] Unexpected exception during startup update check: {ex.Message}", "WARNING");
+            }
         }
 
         private void MainForm_Shown(object? sender, EventArgs e)

@@ -2,21 +2,19 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Windows.Forms;
+using RetroLauncher.Core.Utilities;
+using RetroLauncher.Services.Updates;
 
 namespace RetroLauncher.UI.Forms
 {
     public partial class UpdateDialog : Form
     {
-        private readonly UpdateInfo _updateInfo;
-        private readonly UpdaterSettings _settings;
-        private readonly string _settingsPath;
+        private readonly ApplicationUpdateCheckResult _checkResult;
 
-        public UpdateDialog(UpdateInfo updateInfo, UpdaterSettings settings, string settingsPath)
+        public UpdateDialog(ApplicationUpdateCheckResult checkResult)
         {
             InitializeComponent();
-            _updateInfo = updateInfo;
-            _settings = settings;
-            _settingsPath = settingsPath;
+            _checkResult = checkResult ?? throw new ArgumentNullException(nameof(checkResult));
 
             SetupDialogData();
             SetupEvents();
@@ -24,10 +22,15 @@ namespace RetroLauncher.UI.Forms
 
         private void SetupDialogData()
         {
-            lblVersionDetails.Text = $"Current: {UpdateManager.CurrentVersion}  ➔  Latest: {_updateInfo.Version}";
-            rtbChangelog.Text = string.IsNullOrEmpty(_updateInfo.Changelog) 
-                ? "No release notes available for this release." 
-                : _updateInfo.Changelog.Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+            string currentVer = _checkResult.CurrentVersion?.ToString() ?? ApplicationVersionProvider.Instance.SemanticVersionString;
+            string latestVer = _checkResult.LatestVersion?.ToString() ?? _checkResult.ReleaseTag ?? "Unknown";
+
+            lblVersionDetails.Text = $"Current: {currentVer}  ➔  Latest: {latestVer}";
+
+            string notes = _checkResult.ReleaseNotes;
+            rtbChangelog.Text = string.IsNullOrWhiteSpace(notes)
+                ? "No release notes were provided."
+                : notes.Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
         }
 
         private void SetupEvents()
@@ -37,32 +40,34 @@ namespace RetroLauncher.UI.Forms
             btnRemindLater.Click += (s, e) => this.Close();
         }
 
-        private void btnUpdateNow_Click(object? sender, EventArgs e)
+        private async void btnUpdateNow_Click(object? sender, EventArgs e)
         {
             this.Close();
-            // Start download and progress screen
-            using (var progressForm = new UpdateProgressForm(_updateInfo))
+            try
             {
-                progressForm.ShowDialog(this.Owner);
+                await ApplicationUpdateService.Instance.DownloadUpdateAsync();
+
+                var result = MessageBox.Show(
+                    this.Owner,
+                    "Update downloaded successfully. Retro Launcher will now restart to complete installation.",
+                    "Update Ready",
+                    MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Information
+                );
+
+                if (result == DialogResult.OK)
+                {
+                    await ApplicationUpdateService.Instance.PrepareAndInstallUpdateAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this.Owner, $"Failed to apply update: {ex.Message}", "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void btnSkipVersion_Click(object? sender, EventArgs e)
         {
-            try
-            {
-                _settings.SkippedVersion = _updateInfo.Version;
-                string json = JsonSerializer.Serialize(_settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_settingsPath, json);
-                
-                MessageBox.Show($"Version {_updateInfo.Version} will be skipped until the next release is published.", 
-                    "Update Skipped", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to write skipped version: {ex.Message}");
-            }
-            
             this.Close();
         }
     }
